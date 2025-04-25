@@ -1,0 +1,44 @@
+# ─────────────────────────────
+#  Python / ML projects
+# ─────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+*.log
+
+# Virtual-envs & environment files
+venv/
+.env/
+*.env
+
+# Jupyter & IPython
+.ipynb_checkpoints/
+.profile_default/
+.ipython/
+
+# PyTorch / Lightning / Ultralytics artefacts
+*.pt
+*.ckpt
+*.onnx
+*.engine
+runs/                 # Ultralytics + Lightning logs
+models/               # exported models (keep copies elsewhere)
+
+# Data (original zips, extracted frames, splits)
+data/**
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.idea/
+.vscode/
+
+# macOS virtual folders
+__MACOSX/
