@@ -1,129 +1,158 @@
 #!/usr/bin/env python3
 """
-app/app.py – Streamlit demo for your YOLO-v8 crash-vs-normal classifier.
+app/app.py – Streamlit demo (realtime-ish version)
 
-• looks for the newest  exports/*/best.onnx  checkpoint
-• supports single images *and* full MP4s (≈5 fps sampling)
-• CPU-only inference → runs anywhere you have Python+ONNXRuntime
-
-run:   streamlit run app/app.py
+run with:
+    streamlit run app/app.py
 """
 
 from __future__ import annotations
-import tempfile, cv2, numpy as np, streamlit as st
-import onnxruntime as ort
+import time
+import tempfile
 from pathlib import Path
-from PIL import Image
 from datetime import datetime
 
-# ───────────────────────── locate the model ──────────────────────────
-REPO_ROOT = Path(__file__).resolve().parents[1]         # <repo>/app/app.py
-EXPORTS   = REPO_ROOT / "exports"                       # exports/train*/best.onnx
+import cv2
+import numpy as np
+import onnxruntime as ort
+import streamlit as st
+from PIL import Image, ImageDraw, ImageFont   # pillow for overlay text
 
-
-def newest_best()->Path:
-    """Return the newest exports/*/best.onnx (raises if not found)."""
-    bests = sorted(EXPORTS.glob("*/best.onnx"),
-                   key=lambda p: p.stat().st_mtime)
-    if not bests:
-        st.stop()  # nicer than raising in Streamlit
-    return bests[-1]
-
-
-# ───────────────────────── constants ─────────────────────────────────
-MODEL_PATH  = newest_best()
-IMG_SIZE    = 224
-CLASS_NAMES = ["crash", "normal"]  # output[0] = p(crash)
-
-# ───────────────────────── ONNX session (cached) ─────────────────────
-@st.cache_resource(show_spinner=True)
-def load_model(model_path: Path):
-    sess = ort.InferenceSession(
-        model_path.as_posix(),
-        providers=["CPUExecutionProvider"]
-    )
-    in_name  = sess.get_inputs()[0].name
-    out_name = sess.get_outputs()[0].name
-    return sess, in_name, out_name
-
-
-sess, IN_NAME, OUT_NAME = load_model(MODEL_PATH)
-
-# ───────────────────────── helpers ───────────────────────────────────
-def preprocess(bgr: np.ndarray) -> np.ndarray:
-    """BGR uint8 → NCHW float32 ∈[0,1] shape (1,3,224,224)"""
-    img = cv2.resize(bgr, (IMG_SIZE, IMG_SIZE))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    img = img.transpose(2, 0, 1)[None]  # HWC→NCHW + batch dim
-    return img
-
-
-@st.cache_data(show_spinner=False, max_entries=512)
-def predict(img_tensor: np.ndarray) -> float:
-    """Return p(crash) as python float."""
-    out = sess.run([OUT_NAME], {IN_NAME: img_tensor})[0]
-    # ONNX export keeps shape [B,1] or [1] – handle both
-    prob_crash = float(out.ravel()[0])
-    return prob_crash
-
-
-# ───────────────────────── UI ────────────────────────────────────────
-st.title("Crash Detector 📉 (ONNX demo)")
-st.caption(f"Model: **{MODEL_PATH.relative_to(REPO_ROOT)}**  "
-           f"(exported {datetime.fromtimestamp(MODEL_PATH.stat().st_mtime):%Y-%m-%d %H:%M})")
-
-src = st.file_uploader(
-    "Upload **an image** (`jpg/png`) **or a video** (`mp4`)",
-    type=["jpg", "jpeg", "png", "mp4"]
+# ───── MUST be the very first Streamlit call ───────────────────────────
+st.set_page_config(
+    page_title="Crash detector",
+    page_icon="🚗",
+    layout="wide",
 )
 
+# ───── locate newest exports/*/best.onnx ───────────────────────────────
+ROOT     = Path(__file__).resolve().parents[1]
+EXPORTS  = ROOT / "exports"
+BESTS    = sorted(EXPORTS.glob("*/best.onnx"),
+                  key=lambda p: p.stat().st_mtime)
+if not BESTS:
+    st.error("❌  No `best.onnx` found under `exports/`. "
+             "Run training + `export_model.py` first.")
+    st.stop()
+BEST     = BESTS[-1]
+
+# ───── constants ───────────────────────────────────────────────────────
+IMG_SZ   = 224
+NAMES    = ["crash", "normal"]          # [0] is p(crash)
+
+# ───── ONNX session (cached) ─────────────────────────────────────────
+@st.cache_resource(show_spinner=True)
+def _load_model(path: Path):
+    sess = ort.InferenceSession(
+        path.as_posix(),
+        providers=["CPUExecutionProvider"]
+    )
+    return sess, sess.get_inputs()[0].name, sess.get_outputs()[0].name
+
+SESSION, IN_NAME, OUT_NAME = _load_model(BEST)
+
+@st.cache_data(show_spinner=False, max_entries=512)
+def infer(tensor: np.ndarray) -> float:
+    out = SESSION.run([OUT_NAME], {IN_NAME: tensor})[0]
+    return float(out.ravel()[0])
+
+def preprocess(bgr: np.ndarray) -> np.ndarray:
+    img = cv2.resize(bgr, (IMG_SZ, IMG_SZ))
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    return img.transpose(2, 0, 1)[None]  # HWC→NCHW + batch dim
+
+# ───── UI header ──────────────────────────────────────────────────────
+st.title("Crash Detector 🚗💥")
+st.caption(
+    f"**{BEST.relative_to(ROOT)}**  – exported "
+    f"{datetime.fromtimestamp(BEST.stat().st_mtime):%Y-%m-%d %H:%M}"
+)
+
+with st.sidebar:
+    fps_target = st.slider("Analyse frames per second", 1, 30, 5)
+    st.markdown("---")
+    src = st.file_uploader("Upload image (`jpg/png`) or video (`mp4`)",
+                           type=["jpg", "jpeg", "png", "mp4"])
+
 if src is None:
-    st.info("⬆️  Choose a file to begin.")
+    st.info("⬅️  Upload something to begin")
     st.stop()
 
-with tempfile.NamedTemporaryFile(delete=False) as tmp:
-    tmp.write(src.read())
-    local_path = tmp.name                          # path for OpenCV
+# write the uploaded file to disk for OpenCV
+tmp = tempfile.NamedTemporaryFile(delete=False)
+tmp.write(src.read())
+tmp.close()
+path = tmp.name
 
-if src.type != "video/mp4":                        # ── single image ──
-    frame = cv2.imread(local_path)
+# ───── image branch ─────────────────────────────────────────────────
+if src.type != "video/mp4":
+    frame = cv2.imread(path)
     if frame is None:
-        st.error("Could not read the image.")
+        st.error("❌  Could not read the image.")
         st.stop()
 
-    p = predict(preprocess(frame))
-    lbl = CLASS_NAMES[0] if p > 0.5 else CLASS_NAMES[1]  # simple arg-max
-    st.image(frame[:, :, ::-1],  # BGR→RGB
-             caption=f"Prediction: **{lbl}** – p(crash) = {p:.2%}",
-             use_column_width=True)
+    p = infer(preprocess(frame))
+    label = NAMES[0] if p > 0.5 else NAMES[1]
+    st.image(
+        frame[:, :, ::-1],
+        caption=f"Prediction: **{label}** – p(crash) = {p:.2%}",
+        use_column_width=True
+    )
+    st.stop()
 
-else:                                              # ── video ──────────
-    cap = cv2.VideoCapture(local_path)
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
-    fps   = cap.get(cv2.CAP_PROP_FPS) or 25
-    every = max(int(fps // 5), 1)                  # analyse ≈5 fps
+# ───── video branch (live-ish playback) ──────────────────────────────
+cap = cv2.VideoCapture(path)
+total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+src_fps      = cap.get(cv2.CAP_PROP_FPS) or 25
+step         = max(int(src_fps // fps_target), 1)
 
-    progress = st.progress(0.0, text="Analysing video…")
-    chart    = st.line_chart(y=[])
-    framebox = st.empty()
+progress = st.progress(0.0)
+chart    = st.line_chart(y=[])
+viewer   = st.empty()
 
-    idx = 0
-    while cap.isOpened():
-        ok, frame = cap.read()
-        if not ok:
-            break
+# prepare a font for overlay text
+try:
+    FONT = ImageFont.truetype("arial.ttf", 24)
+except OSError:
+    FONT = ImageFont.load_default()
 
-        if idx % every == 0:
-            p = predict(preprocess(frame))
-            chart.add_rows([p])
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            framebox.image(frame_rgb,
-                           caption=f"frame {idx}/{total} – p(crash) = {p:.2%}",
-                           use_column_width=True)
-        idx += 1
-        progress.progress(min(idx / total, 1.0),
-                          text=f"{idx}/{total} frames")
+idx, analysed = 0, 0
+last_time = time.perf_counter()
 
-    cap.release()
-    st.success("Finished 🚀")
+while cap.isOpened():
+    ok, frame = cap.read()
+    if not ok:
+        break
 
+    # only run inference every `step` frames
+    if idx % step == 0:
+        p = infer(preprocess(frame))
+        analysed += 1
+        chart.add_rows([p])
+
+        # draw overlay text
+        overlay = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(overlay)
+        draw.text((10, 10),
+                  f"p(crash) = {p:.2%}",
+                  font=FONT,
+                  fill=(0, 255, 0))
+        display_frame = np.array(overlay)
+    else:
+        display_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    viewer.image(display_frame, channels="RGB", use_column_width=True)
+    progress.progress(idx / total_frames,
+                      text=f"{idx}/{total_frames} frames")
+
+    # throttle loop to match original FPS
+    frame_duration = 1.0 / src_fps
+    elapsed = time.perf_counter() - last_time
+    if elapsed < frame_duration:
+        time.sleep(frame_duration - elapsed)
+    last_time = time.perf_counter()
+
+    idx += 1
+
+cap.release()
+st.success(f"Finished 🚀  analysed {analysed}/{total_frames} frames")

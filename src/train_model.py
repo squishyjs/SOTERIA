@@ -18,13 +18,13 @@ os.environ["TORCH_DISABLE_DYNAMO"] = "1"     # avoid Dynamo-spawn bug
 set_start_method("spawn", force=True)        # safe multiprocessing start
 
 # ─── CONFIG – tweak here only ──────────────────────────────────
-EPOCHS     = 5
-IMG_SIZE   = 224          # loader resize
-BATCH      = 256          # good for 4090 @224 px
+EPOCHS     = 10
+IMG_SIZE   = 320          # loader resize
+BATCH      = 120          # good for 4090 @224 px
 WORKERS    = 16            # raise later (e.g. 12) when stable
 PIN_MEMORY = True         # ignored (see note above)
 CACHE_DISK = True         # *.cache files next to JPEGs
-MODEL_WTS  = "yolov8n-cls.pt"     # or -s/-m/-l
+MODEL_WTS  = "yolov8l-cls.pt"     # or -s/-m/-l
 DEVICE     = 0            # GPU index, −1 = CPU
 # ───────────────────────────────────────────────────────────────
 
