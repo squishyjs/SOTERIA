@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-test_model.py – ultra-simple sanity-check for a YOLOv8-cls checkpoint
-(best.pt) produced by train_model.py.
+test.py – ultra-simple sanity-check for a YOLOv8-cls checkpoint
+(best.pt) produced by train.py.
 
 usage:
-    python test_model.py <img_or_folder>
+    python test.py <img_or_folder>
 """
 
 from __future__ import annotations

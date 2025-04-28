@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-merge_negatives.py
+consolidate_negatives.py
 ──────────────────
 Create **one consolidated folder** that holds every negative-class image:
     • all N_*.jpg extracted from the Normal videos
@@ -15,13 +15,13 @@ no extra disk) or copies each file into a new directory:
         └─ C_001234_27.jpg  (flag 0)
 
 Run after you've executed:
-    1. extract_normal_frames.py   (creates frames_normal/)
+    1. extract_frames.py   (creates frames_normal/)
     2. separate_flag01.py         (creates flag_split/flag0/ flag1/)
 
 Usage
 ─────
-    python src/merge_negatives.py            # copies (slower, more space)
-    python src/merge_negatives.py --link     # hard-links (instant)
+    python src/consolidate_negatives.py            # copies (slower, more space)
+    python src/consolidate_negatives.py --link     # hard-links (instant)
 """
 
 import argparse, os, pathlib, shutil, sys

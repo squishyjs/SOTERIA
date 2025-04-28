@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-separate_ccd_frames.py
+separate_frames.py
 ──────────────────────
 Read *Crash_Table.csv* and fan-out all CCD frames into three
 phys-class folders under **data/ccd/frames_separated/**
@@ -10,8 +10,8 @@ phys-class folders under **data/ccd/frames_separated/**
     normal/   – every N_ frame                ➜  "normal"
 
 Run once from the repo root:
-    python src/separate_ccd_frames.py --link      # instant hard-links
-    python src/separate_ccd_frames.py            # real copies
+    python src/separate_frames.py --link      # instant hard-links
+    python src/separate_frames.py            # real copies
 
 Afterwards you can point any ImageFolder or splitter at
 `data/ccd/frames_separated/` without worrying about flags.

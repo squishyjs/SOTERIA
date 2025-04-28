@@ -32,7 +32,7 @@ BESTS    = sorted(EXPORTS.glob("*/best.onnx"),
                   key=lambda p: p.stat().st_mtime)
 if not BESTS:
     st.error("❌  No `best.onnx` found under `exports/`. "
-             "Run training + `export_model.py` first.")
+             "Run training + `export.py` first.")
     st.stop()
 BEST     = BESTS[-1]
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-train_model.py — one-click YOLO-v8 image-classifier training
+train.py — one-click YOLO-v8 image-classifier training
 Optimised for a single RTX 4090 on Windows 10/11.
 
 ❗️ Note: Ultralytics’ *Python* .train() does **not** accept `pin_memory`,
@@ -20,7 +20,7 @@ set_start_method("spawn", force=True)        # safe multiprocessing start
 # ─── CONFIG – tweak here only ──────────────────────────────────
 EPOCHS     = 10
 IMG_SIZE   = 320          # loader resize
-BATCH      = 120          # good for 4090 @224 px
+BATCH      = 144         # good for 4090 @224 px
 WORKERS    = 16            # raise later (e.g. 12) when stable
 PIN_MEMORY = True         # ignored (see note above)
 CACHE_DISK = True         # *.cache files next to JPEGs

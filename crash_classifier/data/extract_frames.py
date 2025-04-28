@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_normal_frames.py
+extract_frames.py
 ────────────────────────
 Sample each MP4 in data/ccd/videos/Normal/ at 2 fps and save the frames as
 
@@ -9,8 +9,8 @@ Sample each MP4 in data/ccd/videos/Normal/ at 2 fps and save the frames as
 into data/ccd/frames_normal/  (or a custom --dst path).
 
 Run:
-    python src/extract_normal_frames.py            # hard-coded default
-    python src/extract_normal_frames.py --dst data/tmp  # custom folder
+    python src/extract_frames.py            # hard-coded default
+    python src/extract_frames.py --dst data/tmp  # custom folder
 """
 
 import argparse, pathlib, subprocess, sys

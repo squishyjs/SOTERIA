@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-export_model.py – export a trained YOLO-v8 *classification* checkpoint to:
+export.py – export a trained YOLO-v8 *classification* checkpoint to:
 
     • ONNX  – 3 MB, fastest Flutter integration (onnxruntime plugin)
     • TFLite (fp32) – only if TensorFlow is available
@@ -15,8 +15,8 @@ Why this layout?
 
 Usage
 -----
-    python export_model.py                 # auto-detect newest runs/*/best.pt
-    python export_model.py path/to/best.pt
+    python export.py                 # auto-detect newest runs/*/best.pt
+    python export.py path/to/best.pt
 """
 
 from __future__ import annotations
