@@ -1,0 +1,14 @@
+# requirements.txt  (lean CPU build, fast to install)
+--index-url https://download.pytorch.org/whl/cpu
+
+torch==2.2.2
+torchvision==0.17.2
+torchaudio==2.2.2
+
+onnxruntime==1.18.0          # 👈 add if log says onnxruntime missing
+opencv-python-headless==4.11.0.86  # provides cv2
+altair==5.5.0                # safe to pin explicitly
+numpy==2.2.5                 # always good to pin
+streamlit==1.45.1
+ultralytics==8.3.133
+tqdm==4.67.1
