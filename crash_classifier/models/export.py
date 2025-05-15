@@ -30,7 +30,7 @@ from ultralytics import YOLO
 
 # ───────────────────────── config ────────────────────────────────
 IMGSZ = 224                                # training size
-ROOT   = pathlib.Path(__file__).resolve().parents[1]
+ROOT   = pathlib.Path(__file__).resolve().parents[2]
 RUNS   = ROOT / "runs" / "classify"
 EXPORT = ROOT / "exports"
 # ─────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ def has_pkg(pkg: str) -> bool:
 
 
 def export_all(best_pt: pathlib.Path) -> None:
-    run_name = best_pt.parents[1].name        # e.g. train8
+    run_name = best_pt.parents[2].name        # e.g. train8
     out_dir  = EXPORT / run_name
     print(f"\n▶ exporting  {best_pt.relative_to(ROOT)}  →  {out_dir.relative_to(ROOT)}")
 
@@ -102,7 +102,7 @@ def export_all(best_pt: pathlib.Path) -> None:
 
 # ────────────────────────── main ─────────────────────────────────
 if __name__ == "__main__":
-    ckpt = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else latest_best()
+    ckpt = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 1 else latest_best()
     if not ckpt or not ckpt.is_file():
         sys.exit("[ERROR] pass a path to best.pt or run training first.")
     export_all(ckpt)

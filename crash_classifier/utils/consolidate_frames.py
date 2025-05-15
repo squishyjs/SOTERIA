@@ -30,8 +30,6 @@ SOURCES = [
     ROOT / "data/ccd_frames/pos_neg_split/positive",
     ROOT / "data/ccd_frames/pos_neg_split/negative",
     ROOT / "data/ccd_frames/normal_frames",
-    ROOT / "data/dashcam_frames/frames/positive",
-    ROOT / "data/dashcam_frames/frames/negative",
 ]
 
 DEST_POS = ROOT / "data/all_frames/positive"
