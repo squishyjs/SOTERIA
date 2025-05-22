@@ -160,7 +160,11 @@ while cap.isOpened():
     dashcam_centroids.append((cx, cy))
 
     car_count_history.append(cars_this_frame)
-    viewer.image(np.array(pil_img), channels="RGB", use_container_width=True)
+    viewer.image(
+        np.array(pil_img),
+        channels="RGB",
+        use_column_width=True
+    )
     frames.append(current_frame.copy())
 
     progress.progress(min(idx / total_frames, 1.0), text=f"{idx}/{total_frames} frames")
