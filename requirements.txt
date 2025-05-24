@@ -1,20 +1,25 @@
-# Use NVIDIA’s PyTorch wheels for CUDA 12.1
---extra-index-url https://download.pytorch.org/whl/cu121
+# Core ML framework (CPU-safe)
+torch>=2.2.2
+torchvision>=0.17.2
+torchaudio>=2.2.2
 
-# Core ML framework (with CUDA support)
-torch>=2.2.2+cu121
-torchvision>=0.17.2+cu121
-torchaudio>=2.2.2+cu121
-
-# YOLOv8 training & inference
+# YOLOv8 (works with CPU or GPU)
 ultralytics>=8.2.3
 
-# Data processing & I/O
+# Video processing
 opencv-python-headless>=4.10
 ffmpeg-python>=0.2
-pytube>=15.0
 
-# Utilities
+# Essential libraries
+numpy>=1.24
+Pillow>=10.0
+matplotlib>=3.8
+
+# ONNX runtime
+onnxruntime>=1.16
+
+# YouTube downloader
+yt-dlp>=2024.3
+
+# Streamlit UI
 streamlit>=1.33
-tqdm>=4.66
-
