@@ -827,17 +827,17 @@ with st.sidebar:
         with st.expander("ℹ️ Example URLs"):
             st.markdown("""
             **YouTube URLs:**
-            - `https://www.youtube.com/watch?v=VIDEO_ID`
-            - `https://youtu.be/VIDEO_ID`
-            - `https://www.youtube.com/shorts/VIDEO_ID` *(YouTube Shorts)*
+            - https://www.youtube.com/watch?v=VIDEO_ID
+            - https://youtu.be/VIDEO_ID
+            - https://www.youtube.com/shorts/VIDEO_ID *(YouTube Shorts)*
 
             **Direct Video Files:**
-            - `http://example.com/video.mp4`
-            - `https://sample-videos.com/zip/10/mp4/720p/sample.mp4`
+            - http://example.com/video.mp4
+            - https://sample-videos.com/zip/10/mp4/720p/sample.mp4
 
             **Live Streams:**
-            - `rtmp://live.server.com/stream/key`
-            - `rtsp://192.168.1.100:554/stream1`
+            - rtmp://live.server.com/stream/key
+            - rtsp://192.168.1.100:554/stream1
 
             **Google Drive:**
             - Share links (will be auto-converted)
