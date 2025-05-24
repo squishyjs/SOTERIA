@@ -21,7 +21,7 @@ import re
 import urllib.parse
 import yt_dlp
 
-st.set_page_config(page_title="SOTERIA - Crash Detection", page_icon="🚨", layout="wide")
+st.set_page_config(page_title="LIVE CRASH DETECTION (SOTERIA)", page_icon="🚨", layout="wide")
 
 st.markdown("""
 <style>
