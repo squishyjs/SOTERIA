@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-app/app.py – Streamlit crash detection with professional dashboard layout
-FIXED VERSION with improved crash type detection and severity assessment
+app/app.py – Streamlit crash detection with simplified, reliable crash type detection
+SIMPLIFIED VERSION focusing on bounding box analysis around crash spikes
 """
 
 import os
@@ -140,394 +140,503 @@ def infer_crash(tensor: np.ndarray) -> float:
     return float(out.ravel()[0])
 
 
-# IMPROVED CRASH DETECTION ALGORITHMS
+# SIMPLIFIED CRASH DETECTION ALGORITHMS
 
-def calculate_velocity_and_acceleration(centroids, fps):
-    """Calculate velocity and acceleration from centroid positions"""
-    if len(centroids) < 3:
-        return [], []
-
-    velocities = []
-    accelerations = []
-
-    # Calculate velocities (pixels per second)
-    for i in range(1, len(centroids)):
-        if centroids[i] is None or centroids[i - 1] is None:
-            velocities.append(0.0)
-            continue
-
-        dx = centroids[i][0] - centroids[i - 1][0]
-        dy = centroids[i][1] - centroids[i - 1][1]
-        velocity = np.sqrt(dx ** 2 + dy ** 2) * fps
-        velocities.append(velocity)
-
-    # Calculate accelerations (pixels per second squared)
-    for i in range(1, len(velocities)):
-        accel = (velocities[i] - velocities[i - 1]) * fps
-        accelerations.append(accel)
-
-    return velocities, accelerations
-
-
-def detect_sudden_impact(velocities, accelerations, threshold_velocity_drop=50.0, threshold_deceleration=200.0):
-    """Detect sudden impact based on velocity and acceleration patterns"""
-    if len(velocities) < 5 or len(accelerations) < 3:
-        return False, 0.0, 0.0
-
-    # Look for sudden velocity drops
-    max_velocity_drop = 0.0
-    max_deceleration = 0.0
-    sudden_impact = False
-
-    # Check last few frames for impact
-    recent_velocities = velocities[-5:]
-    recent_accelerations = accelerations[-3:]
-
-    # Velocity drop analysis
-    for i in range(1, len(recent_velocities)):
-        velocity_drop = recent_velocities[i - 1] - recent_velocities[i]
-        if velocity_drop > max_velocity_drop:
-            max_velocity_drop = velocity_drop
-
-    # Deceleration analysis
-    for accel in recent_accelerations:
-        if abs(accel) > abs(max_deceleration):
-            max_deceleration = accel
-
-    # Determine if this constitutes sudden impact
-    if max_velocity_drop > threshold_velocity_drop or abs(max_deceleration) > threshold_deceleration:
-        sudden_impact = True
-
-    return sudden_impact, max_velocity_drop, abs(max_deceleration)
-
-
-def analyze_movement_direction(centroids, window_size=10):
-    """Analyze predominant movement direction"""
-    if len(centroids) < window_size:
-        return 0.0, 0.0, 0.0  # dx, dy, angle
-
-    recent_centroids = centroids[-window_size:]
-    valid_centroids = [c for c in recent_centroids if c is not None]
-
-    if len(valid_centroids) < 3:
-        return 0.0, 0.0, 0.0
-
-    # Calculate overall movement vector
-    start_point = valid_centroids[0]
-    end_point = valid_centroids[-1]
-
-    dx = end_point[0] - start_point[0]
-    dy = end_point[1] - start_point[1]
-
-    # Calculate movement angle
-    angle = np.arctan2(dy, dx) if dx != 0 or dy != 0 else 0.0
-
-    return dx, dy, angle
-
-
-def calculate_vehicle_involvement_score(car_count_history, crash_start, crash_end, window_size=30):
-    """Calculate more accurate vehicle involvement based on statistical analysis"""
-    if crash_start < window_size or crash_end >= len(car_count_history):
-        return 1, 0.0  # Default to single vehicle, low confidence
-
-    # Get baseline vehicle count (before crash)
-    pre_crash_counts = car_count_history[crash_start - window_size:crash_start]
-    crash_counts = car_count_history[crash_start:crash_end + 1]
-    post_crash_counts = car_count_history[crash_end + 1:min(len(car_count_history), crash_end + window_size)]
-
-    if not pre_crash_counts or not crash_counts:
-        return 1, 0.0
-
-    # Statistical analysis
-    baseline_avg = np.mean(pre_crash_counts)
-    baseline_std = np.std(pre_crash_counts) if len(pre_crash_counts) > 1 else 0.5
-    crash_avg = np.mean(crash_counts)
-    crash_max = max(crash_counts)
-
-    # Calculate confidence based on how different crash period is from baseline
-    if baseline_std > 0:
-        z_score = abs(crash_avg - baseline_avg) / baseline_std
-        confidence = min(z_score / 3.0, 1.0)  # Normalize to 0-1
-    else:
-        confidence = 0.5
-
-    # Estimate involved vehicles
-    # Use the maximum increase during crash, but be conservative
-    vehicle_increase = max(0, crash_max - baseline_avg)
-    involved_vehicles = max(1, int(baseline_avg + vehicle_increase + 1))  # +1 for dashcam
-
-    # Cap at reasonable maximum and adjust based on confidence
-    involved_vehicles = min(involved_vehicles, 6)
-
-    # If confidence is low, default to fewer vehicles
-    if confidence < 0.3:
-        involved_vehicles = min(involved_vehicles, 2)
-
-    return involved_vehicles, confidence
-
-
-def improved_crash_type_classification(dashcam_centroids, car_count_history, crash_start, crash_end,
-                                       p_scores, fps, confidence_threshold=0.05):
+def analyze_peak_frame_collision(all_vehicle_boxes, analysed_frame_indices, p_scores, frames, frame_width,
+                                 frame_height):
     """
-    Improved crash type classification - FIXED for dashcam scenarios where dashcam doesn't move much
+    Analyze the single frame with highest crash probability to determine:
+    1. Which specific vehicles are involved in the collision
+    2. What type of collision it is
+    3. How many vehicles are actually involved
     """
-    if crash_start >= len(dashcam_centroids) or crash_end >= len(dashcam_centroids):
-        return "Unknown", "Very Low", 0.1
+    if not p_scores or not all_vehicle_boxes:
+        return "Unknown", 0.1, 1, []
 
-    # Get probability metrics first - these are our most reliable indicators
-    crash_probabilities = p_scores[crash_start:crash_end + 1] if crash_end < len(p_scores) else []
-    max_probability = max(crash_probabilities) if crash_probabilities else 0.0
-    avg_probability = np.mean(crash_probabilities) if crash_probabilities else 0.0
+    # Find the frame with the highest crash probability
+    max_prob_idx = np.argmax(p_scores)
+    max_probability = p_scores[max_prob_idx]
+    peak_frame_idx = analysed_frame_indices[max_prob_idx]
 
-    # Calculate crash duration and intensity
-    crash_duration = crash_end - crash_start + 1
+    # Get vehicle boxes at the peak crash moment
+    if peak_frame_idx >= len(all_vehicle_boxes):
+        return "Unknown", 0.1, 1, []
 
-    # Vehicle count analysis - FIXED LOGIC
-    if crash_start >= 30 and crash_end < len(car_count_history):
-        pre_crash_counts = car_count_history[crash_start - 30:crash_start]
-        crash_counts = car_count_history[crash_start:crash_end + 1]
+    peak_frame_boxes = list(all_vehicle_boxes[peak_frame_idx])  # Copy the list
 
-        pre_crash_avg = np.mean(pre_crash_counts) if pre_crash_counts else 0
-        crash_avg = np.mean(crash_counts) if crash_counts else 0
-        crash_max = max(crash_counts) if crash_counts else 0
+    # Define dashcam area (bottom 30% of frame)
+    dashcam_threshold = frame_height * 0.7
 
-        # For dashcam footage, we expect:
-        # - Rear-end: vehicle count stays same or increases (other car hits us)
-        # - Side impact: vehicle count increases (car comes from side)
-        # - Single vehicle: count stays same or decreases (we hit obstacle)
+    # ALWAYS ensure dashcam vehicle has a bounding box
+    has_dashcam_box = any(box[1] > dashcam_threshold for box in peak_frame_boxes)
 
-        vehicle_change = crash_avg - pre_crash_avg
-        max_vehicle_change = crash_max - pre_crash_avg
+    if not has_dashcam_box:
+        # Create estimated dashcam vehicle box - MUCH BIGGER like before
+        dashcam_width = int(frame_width * 0.9)  # 90% of frame width (like before)
+        dashcam_height = int(frame_height * 0.15)  # 15% of frame height
+        dashcam_x1 = int(frame_width * 0.05)  # Start from 5% from left edge
+        dashcam_x2 = dashcam_x1 + dashcam_width
+        dashcam_y1 = int(frame_height * 0.8)  # Bottom 20% of frame
+        dashcam_y2 = dashcam_y1 + dashcam_height
 
-        # Involvement calculation
-        if max_vehicle_change > 0.5:  # Clear increase in vehicles
-            involved_vehicles = int(pre_crash_avg + max_vehicle_change + 1)  # +1 for dashcam
-            vehicle_confidence = min(max_vehicle_change / 2.0, 1.0)
-        elif abs(vehicle_change) < 0.3:  # Stable count (likely rear-end or we hit them)
-            involved_vehicles = max(2, int(pre_crash_avg + 1))  # Assume 2+ vehicles
-            vehicle_confidence = 0.6  # Medium confidence for stable count
-        else:  # Decrease (we hit obstacle or lost tracking)
-            involved_vehicles = 1
-            vehicle_confidence = 0.3
-    else:
-        # Fallback when insufficient data
-        involved_vehicles = 2  # Default assumption for crashes
-        vehicle_confidence = 0.4
-        vehicle_change = 0
-        max_vehicle_change = 0
+        # Add estimated dashcam box
+        estimated_dashcam_box = (dashcam_x1, dashcam_y1, dashcam_x2, dashcam_y2)
+        peak_frame_boxes.append(estimated_dashcam_box)
 
-    # Cap involved vehicles
-    involved_vehicles = min(involved_vehicles, 6)
+    if not peak_frame_boxes:
+        return "Single Vehicle Collision", 0.8, 1, []
 
-    # Movement analysis (may not work well for dashcam)
-    crash_centroids = dashcam_centroids[crash_start:crash_end + 5]
-    velocities, accelerations = calculate_velocity_and_acceleration(crash_centroids, fps)
-    sudden_impact, velocity_drop, max_deceleration = detect_sudden_impact(velocities, accelerations)
-    dx, dy, movement_angle = analyze_movement_direction(dashcam_centroids, 15)
+    # Find dashcam vehicle box
+    dashcam_box = None
+    other_boxes = []
 
-    # START CLASSIFICATION - prioritize probability and vehicle patterns over movement
-    confidence_score = 0.3  # Higher base confidence
+    for box in peak_frame_boxes:
+        center_y = (box[1] + box[3]) / 2
+        if center_y > dashcam_threshold:
+            dashcam_box = box
+        else:
+            other_boxes.append(box)
+
+    # Calculate overlaps with dashcam vehicle
+    overlapping_vehicles = []
+    collision_detected = False
+
+    if dashcam_box:
+        for i, other_box in enumerate(other_boxes):
+            # Calculate overlap between dashcam and other vehicle
+            overlap_x = max(0, min(dashcam_box[2], other_box[2]) - max(dashcam_box[0], other_box[0]))
+            overlap_y = max(0, min(dashcam_box[3], other_box[3]) - max(dashcam_box[1], other_box[1]))
+            overlap_area = overlap_x * overlap_y
+
+            # Calculate areas
+            dashcam_area = (dashcam_box[2] - dashcam_box[0]) * (dashcam_box[3] - dashcam_box[1])
+            other_area = (other_box[2] - other_box[0]) * (other_box[3] - other_box[1])
+
+            # Check for meaningful overlap (5% threshold)
+            overlap_threshold = min(dashcam_area, other_area) * 0.05
+
+            if overlap_area > overlap_threshold:
+                overlapping_vehicles.append(other_box)
+                collision_detected = True
+
+    # Also check for overlaps between other vehicles (multi-vehicle without dashcam)
+    other_vehicle_overlaps = []
+    for i in range(len(other_boxes)):
+        for j in range(i + 1, len(other_boxes)):
+            box1, box2 = other_boxes[i], other_boxes[j]
+
+            overlap_x = max(0, min(box1[2], box2[2]) - max(box1[0], box2[0]))
+            overlap_y = max(0, min(box1[3], box2[3]) - max(box1[1], box2[1]))
+            overlap_area = overlap_x * overlap_y
+
+            area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+            area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+            overlap_threshold = min(area1, area2) * 0.05
+
+            if overlap_area > overlap_threshold:
+                if box1 not in other_vehicle_overlaps:
+                    other_vehicle_overlaps.append(box1)
+                if box2 not in other_vehicle_overlaps:
+                    other_vehicle_overlaps.append(box2)
+
+    # CLEAR COLLISION TYPE LOGIC
     collision_type = "Unknown"
+    confidence_score = 0.3
+    involved_boxes = []
 
-    # REAR-END COLLISION detection (most common in dashcam footage)
-    if crash_duration >= 3 and max_probability > 0.002:  # Very low threshold
+    if collision_detected:
+        # Dashcam vehicle is involved in collision
+        involved_boxes = [dashcam_box] + overlapping_vehicles
+        involved_count = len(involved_boxes)
 
-        # Pattern 1: Multiple vehicles, stable/increasing count, multi-spike
-        if involved_vehicles >= 2 and vehicle_change >= -0.5:  # Allow slight decrease due to tracking issues
-            collision_type = "Rear-End Collision"
-            confidence_score += 0.4
+        if len(overlapping_vehicles) == 1:
+            # Dashcam + 1 other vehicle = 2-vehicle collision
+            other_box = overlapping_vehicles[0]
 
-            # Boost confidence for typical rear-end patterns
-            if crash_duration >= 5:  # Multiple impact frames
-                confidence_score += 0.2
-            if vehicle_confidence > 0.4:
-                confidence_score += 0.2
-            if max_probability > 0.005:
-                confidence_score += 0.1
+            # Determine collision type based on relative positions
+            dashcam_center = ((dashcam_box[0] + dashcam_box[2]) / 2, (dashcam_box[1] + dashcam_box[3]) / 2)
+            other_center = ((other_box[0] + other_box[2]) / 2, (other_box[1] + other_box[3]) / 2)
 
-        # Pattern 2: Clear vehicle increase (side impact)
-        elif max_vehicle_change > 1.0:
-            collision_type = "Side Impact / T-Bone"
-            confidence_score += 0.35
+            dx = abs(dashcam_center[0] - other_center[0])
+            dy = abs(dashcam_center[1] - other_center[1])
 
-        # Pattern 3: Single vehicle (obstacle/barrier)
-        elif involved_vehicles == 1 or vehicle_change < -1.0:
-            collision_type = "Single Vehicle / Obstacle Impact"
-            confidence_score += 0.25
+            if dy > dx:  # More vertical separation
+                if other_center[1] < dashcam_center[1]:  # Other vehicle is in front
+                    collision_type = "Rear-End Collision"
+                else:  # Other vehicle is behind
+                    collision_type = "Frontal Impact"
+                confidence_score = 0.9
+            else:  # More horizontal separation
+                collision_type = "Side Impact"
+                confidence_score = 0.85
 
-        # Pattern 4: Movement-based detection (if available)
-        elif sudden_impact and velocity_drop > 20:
-            if involved_vehicles >= 2:
-                collision_type = "Rear-End Collision"
-                confidence_score += 0.35
-            else:
-                collision_type = "Frontal Impact"
-                confidence_score += 0.3
+        elif len(overlapping_vehicles) > 1:
+            # Dashcam + multiple vehicles = Multi-vehicle collision
+            collision_type = "Multi-Vehicle Collision"
+            confidence_score = 0.9
 
-        # Pattern 5: Lateral movement
-        elif abs(dx) > 25:
-            if involved_vehicles >= 2:
-                collision_type = "Sideswipe"
-                confidence_score += 0.3
-            else:
-                collision_type = "Lane Departure"
-                confidence_score += 0.2
+    elif other_vehicle_overlaps:
+        # Other vehicles colliding but not with dashcam
+        involved_boxes = other_vehicle_overlaps
+        involved_count = len(other_vehicle_overlaps) + 1  # Include dashcam as witness
 
-        # Pattern 6: Extended duration
-        elif crash_duration > 10:
-            if involved_vehicles >= 3:
-                collision_type = "Multi-Vehicle Incident"
-                confidence_score += 0.3
-            else:
-                collision_type = "Single Vehicle / Rollover"
-                confidence_score += 0.25
-
-        # Default for detected crashes
+        if len(other_vehicle_overlaps) == 2:
+            collision_type = "Multi-Vehicle Collision (Witnessed)"
+            confidence_score = 0.8
         else:
-            if involved_vehicles >= 2:
-                collision_type = "Multi-Vehicle Collision"
-                confidence_score += 0.3
-            else:
-                collision_type = "Single Vehicle Incident"
-                confidence_score += 0.2
+            collision_type = "Multi-Vehicle Collision (Witnessed)"
+            confidence_score = 0.75
 
-    # If still unknown but we detected spikes, default to most likely scenario
-    if collision_type == "Unknown" and max_probability > 0.001:
-        if involved_vehicles >= 2:
-            collision_type = "Rear-End Collision"  # Most common dashcam crash
-            confidence_score = 0.4
-        else:
-            collision_type = "Single Vehicle Incident"
-            confidence_score = 0.3
+    else:
+        # No overlaps detected = Single vehicle collision
+        involved_boxes = [dashcam_box] if dashcam_box else []
+        involved_count = 1
+        collision_type = "Single Vehicle Collision"
+        confidence_score = 0.9
 
-    # Probability-based confidence boost
+    # Boost confidence based on clear collision indicators
+    if collision_detected:
+        confidence_score += 0.1  # Direct dashcam involvement
+
     if max_probability > 0.01:
-        confidence_score += 0.3
+        confidence_score += 0.1  # High crash probability
     elif max_probability > 0.005:
-        confidence_score += 0.2
-    elif max_probability > 0.002:
-        confidence_score += 0.15
-    elif max_probability > 0.001:
-        confidence_score += 0.1
+        confidence_score += 0.05
 
-    # Duration boost
-    if crash_duration >= 5:
-        confidence_score += 0.1
-
-    # Cap confidence score
+    # Cap confidence
     confidence_score = min(confidence_score, 1.0)
 
-    # Determine confidence level
-    if confidence_score >= 0.7:
-        confidence_level = "Very High"
-    elif confidence_score >= 0.55:
-        confidence_level = "High"
-    elif confidence_score >= 0.35:
-        confidence_level = "Medium"
-    elif confidence_score >= 0.2:
-        confidence_level = "Low"
-    else:
-        confidence_level = "Very Low"
-
-    return collision_type, confidence_level, confidence_score
+    return collision_type, confidence_score, involved_count, involved_boxes
 
 
-def enhanced_severity_assessment(collision_type, max_probability, avg_probability,
-                                 velocities, accelerations, involved_vehicles,
-                                 crash_duration, sudden_impact_data):
+def visualize_collision_analysis(frame, involved_boxes, collision_type, confidence_score):
     """
-    Enhanced severity assessment with proper physics and logic
+    Create a visualization of the collision analysis showing only involved vehicles
+    """
+    pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
+
+    frame_height, frame_width = frame.shape[:2]
+    dashcam_threshold = frame_height * 0.7
+
+    # Draw involved vehicles with special highlighting
+    dashcam_count = 0
+    other_count = 0
+
+    for i, box in enumerate(involved_boxes):
+        x1, y1, x2, y2 = box
+        center_y = (y1 + y2) / 2
+
+        # Determine vehicle type and color
+        if center_y > dashcam_threshold:
+            color = (255, 0, 0)  # Red for dashcam vehicle
+            label = f"Dashcam Vehicle (Involved)"
+            dashcam_count += 1
+        else:
+            color = (255, 165, 0)  # Orange for involved vehicles
+            other_count += 1
+            label = f"Involved Vehicle {other_count}"
+
+        # Draw thick border for involved vehicles
+        draw.rectangle([x1 - 2, y1 - 2, x2 + 2, y2 + 2], outline=color, width=5)
+        draw.text((x1, y1 - 30), label, fill=(255, 255, 255))
+
+    # Add collision analysis overlay
+    overlay_y = 10
+    draw.text((10, overlay_y), f"Collision: {collision_type}", fill=(255, 255, 255))
+    overlay_y += 30
+    draw.text((10, overlay_y), f"Confidence: {confidence_score:.1%}", fill=(255, 255, 255))
+    overlay_y += 30
+    draw.text((10, overlay_y), f"Total Involved: {len(involved_boxes)}", fill=(255, 255, 255))
+    overlay_y += 30
+    draw.text((10, overlay_y), f"Dashcam: {'Yes' if dashcam_count > 0 else 'No'}", fill=(255, 255, 255))
+    overlay_y += 30
+    draw.text((10, overlay_y), f"Other Vehicles: {other_count}", fill=(255, 255, 255))
+
+    return pil_img
+
+
+def enhanced_peak_frame_analysis(all_vehicle_boxes, analysed_frame_indices, p_scores, frames, frame_width,
+                                 frame_height):
+    """
+    Enhanced analysis that also considers frames around the peak for better context
+    """
+    if not p_scores or not all_vehicle_boxes:
+        return "Unknown", 0.1, 1, [], None
+
+    # Find peak frame
+    max_prob_idx = np.argmax(p_scores)
+    peak_frame_idx = analysed_frame_indices[max_prob_idx]
+
+    # Get frames around peak for context (±2 frames)
+    context_start = max(0, peak_frame_idx - 2)
+    context_end = min(len(all_vehicle_boxes), peak_frame_idx + 3)
+
+    # Analyze the peak frame
+    collision_type, confidence_score, involved_count, involved_boxes = analyze_peak_frame_collision(
+        all_vehicle_boxes, analysed_frame_indices, p_scores, frames, frame_width, frame_height
+    )
+
+    # Create visualization if we have the frame
+    visualization = None
+    if peak_frame_idx < len(frames):
+        visualization = visualize_collision_analysis(
+            frames[peak_frame_idx], involved_boxes, collision_type, confidence_score
+        )
+
+    # Enhance confidence based on context frames
+    if context_end > context_start:
+        # Check consistency across nearby frames
+        context_vehicle_counts = [len(all_vehicle_boxes[i]) for i in range(context_start, context_end)
+                                  if i < len(all_vehicle_boxes)]
+        if context_vehicle_counts:
+            avg_context_vehicles = np.mean(context_vehicle_counts)
+            vehicle_stability = 1.0 - (np.std(context_vehicle_counts) / max(avg_context_vehicles, 1))
+
+            # Boost confidence if vehicle count is stable (more reliable detection)
+            if vehicle_stability > 0.8:
+                confidence_score += 0.05
+
+    # Final confidence adjustment based on collision type reliability
+    type_reliability = {
+        "Rear-End Collision": 1.0,  # Most reliable to detect
+        "Multi-Vehicle Chain Reaction": 0.95,  # Very reliable pattern
+        "Single Vehicle Collision": 0.9,  # Easy to confirm
+        "Side Impact": 0.8,  # Moderate reliability
+        "Multi-Vehicle Collision": 0.75,  # Can be complex
+        "Frontal Impact": 0.7,  # Harder to distinguish
+        "Unknown": 0.3  # Low reliability
+    }
+
+    confidence_score *= type_reliability.get(collision_type, 0.5)
+    confidence_score = min(confidence_score, 1.0)
+
+    return collision_type, confidence_score, involved_count, involved_boxes, visualization
+
+
+def analyze_bounding_box_patterns(all_vehicle_boxes, crash_start_frame, crash_end_frame, frame_width, frame_height):
+    """
+    Analyze bounding box patterns around crash to determine collision type
+    Returns: collision_type, confidence_score, involved_vehicles
+    """
+
+    # Get frames around the crash for analysis
+    analysis_start = max(0, crash_start_frame - 10)
+    analysis_end = min(len(all_vehicle_boxes), crash_end_frame + 10)
+
+    if analysis_end <= analysis_start:
+        return "Unknown", 0.1, 1
+
+    # Count vehicles before, during, and after crash
+    pre_crash_frames = all_vehicle_boxes[analysis_start:crash_start_frame]
+    crash_frames = all_vehicle_boxes[crash_start_frame:crash_end_frame + 1]
+    post_crash_frames = all_vehicle_boxes[crash_end_frame + 1:analysis_end]
+
+    # Calculate average vehicle counts
+    pre_crash_count = np.mean([len(frame_boxes) for frame_boxes in pre_crash_frames]) if pre_crash_frames else 0
+    crash_count = np.mean([len(frame_boxes) for frame_boxes in crash_frames]) if crash_frames else 0
+    post_crash_count = np.mean([len(frame_boxes) for frame_boxes in post_crash_frames]) if post_crash_frames else 0
+
+    # Analyze vehicle count changes
+    vehicle_increase = crash_count - pre_crash_count
+    max_vehicles_in_crash = max([len(frame_boxes) for frame_boxes in crash_frames]) if crash_frames else 0
+
+    # Analyze bounding box movements and positions
+    box_movements = []
+    lateral_movements = []
+    box_overlaps = []
+
+    # Track how boxes move during crash
+    for i in range(len(crash_frames) - 1):
+        current_boxes = crash_frames[i]
+        next_boxes = crash_frames[i + 1]
+
+        # Simple box matching (closest boxes between frames)
+        for curr_box in current_boxes:
+            curr_center = ((curr_box[0] + curr_box[2]) / 2, (curr_box[1] + curr_box[3]) / 2)
+
+            # Find closest box in next frame
+            if next_boxes:
+                closest_box = min(next_boxes, key=lambda b:
+                ((b[0] + b[2]) / 2 - curr_center[0]) ** 2 + ((b[1] + b[3]) / 2 - curr_center[1]) ** 2)
+                closest_center = ((closest_box[0] + closest_box[2]) / 2, (closest_box[1] + closest_box[3]) / 2)
+
+                # Calculate movement
+                dx = closest_center[0] - curr_center[0]
+                dy = closest_center[1] - curr_center[1]
+                movement = np.sqrt(dx ** 2 + dy ** 2)
+
+                box_movements.append(movement)
+                lateral_movements.append(abs(dx))
+
+        # Check for box overlaps (collision indicator)
+        for i, box1 in enumerate(current_boxes):
+            for j, box2 in enumerate(current_boxes):
+                if i != j:
+                    # Calculate overlap
+                    overlap_x = max(0, min(box1[2], box2[2]) - max(box1[0], box2[0]))
+                    overlap_y = max(0, min(box1[3], box2[3]) - max(box1[1], box2[1]))
+                    overlap_area = overlap_x * overlap_y
+
+                    if overlap_area > 0:
+                        box_overlaps.append(overlap_area)
+
+    # Calculate metrics
+    avg_movement = np.mean(box_movements) if box_movements else 0
+    max_movement = max(box_movements) if box_movements else 0
+    avg_lateral = np.mean(lateral_movements) if lateral_movements else 0
+    total_overlaps = len(box_overlaps)
+
+    # Determine dashcam vehicle position (usually in bottom portion)
+    bottom_threshold = frame_height * 0.6
+    dashcam_boxes = []
+    other_boxes = []
+
+    for frame_boxes in crash_frames:
+        for box in frame_boxes:
+            if box[1] > bottom_threshold:  # y1 > threshold (bottom part)
+                dashcam_boxes.append(box)
+            else:
+                other_boxes.append(box)
+
+    # SIMPLIFIED CLASSIFICATION LOGIC
+    confidence_score = 0.3  # Base confidence
+    collision_type = "Unknown"
+    involved_vehicles = max(1, int(max_vehicles_in_crash))
+
+    # 1. SINGLE VEHICLE COLLISION
+    # - Low vehicle count throughout
+    # - Little movement between vehicles
+    # - Low overlaps
+    if (max_vehicles_in_crash <= 2 and
+            vehicle_increase < 0.5 and
+            total_overlaps <= 1):
+
+        collision_type = "Single Vehicle Collision"
+        confidence_score = 0.7
+        involved_vehicles = 1
+
+    # 2. REAR-END COLLISION
+    # - Stable vehicle count (2-4 vehicles)
+    # - Moderate movement
+    # - Some overlaps
+    # - Vehicles mostly in similar lanes (low lateral movement)
+    elif (2 <= max_vehicles_in_crash <= 4 and
+          abs(vehicle_increase) < 1.0 and
+          avg_lateral < 50 and
+          total_overlaps >= 1):
+
+        collision_type = "Rear-End Collision"
+        confidence_score = 0.8
+        involved_vehicles = max(2, int(crash_count))
+
+    # 3. MULTI-VEHICLE COLLISION
+    # - High vehicle count (3+ vehicles)
+    # - High movement and overlaps
+    # - Significant vehicle increase
+    elif (max_vehicles_in_crash >= 3 or
+          vehicle_increase > 1.0 or
+          total_overlaps >= 3):
+
+        collision_type = "Multi-Vehicle Collision"
+        confidence_score = 0.7
+        involved_vehicles = max(3, int(max_vehicles_in_crash))
+
+    # 4. SIDE IMPACT
+    # - Sudden vehicle increase
+    # - High lateral movement
+    # - Moderate overlaps
+    elif (vehicle_increase > 1.5 and
+          avg_lateral > 40):
+
+        collision_type = "Side Impact"
+        confidence_score = 0.6
+        involved_vehicles = max(2, int(crash_count))
+
+    # 5. DEFAULT - UNKNOWN COLLISION
+    else:
+        if max_vehicles_in_crash >= 2:
+            collision_type = "Vehicle Collision"
+            involved_vehicles = max(2, int(crash_count))
+        else:
+            collision_type = "Single Vehicle Collision"
+            involved_vehicles = 1
+        confidence_score = 0.4
+
+    # Boost confidence based on clear indicators
+    if total_overlaps >= 2:
+        confidence_score += 0.1
+    if max_movement > 30:
+        confidence_score += 0.1
+    if abs(vehicle_increase) > 0.5:
+        confidence_score += 0.1
+
+    # Cap confidence
+    confidence_score = min(confidence_score, 1.0)
+
+    return collision_type, confidence_score, involved_vehicles
+
+
+def calculate_severity(collision_type, max_probability, crash_duration, involved_vehicles, confidence_score):
+    """
+    Simplified severity calculation
     """
     severity_score = 0.0
 
-    # Unpack sudden impact data
-    sudden_impact, velocity_drop, max_deceleration = sudden_impact_data
+    # 1. Base probability factor (0-3 points)
+    severity_score += min(max_probability * 300, 3.0)
 
-    # 1. Base probability factor (0-2.5 points)
-    prob_factor = max_probability * 2.5
-    severity_score += prob_factor
-
-    # 2. Impact intensity factor (0-2.5 points)
-    if sudden_impact:
-        # Velocity drop severity
-        velocity_severity = min(velocity_drop / 100.0, 1.0) * 1.5
-        # Deceleration severity
-        decel_severity = min(max_deceleration / 300.0, 1.0) * 1.0
-        severity_score += velocity_severity + decel_severity
-    else:
-        # Gradual impact is less severe
-        severity_score += avg_probability * 1.0
-
-    # 3. Collision type severity multiplier (0-2 points)
+    # 2. Collision type severity (0-3 points)
     type_severity = {
-        "High-Speed Frontal Impact": 2.0,
-        "Head-On Collision": 2.0,
-        "High-Speed Side Impact": 1.8,
-        "Multi-Vehicle Pileup": 1.8,
-        "Side Impact / T-Bone": 1.6,
-        "Frontal Impact / Obstacle": 1.4,
-        "Rear-End Collision": 1.2,
-        "Complex Multi-Vehicle Event": 1.5,
-        "Multi-Vehicle Collision": 1.3,
-        "Single Vehicle / Rollover": 1.4,
-        "Sideswipe / Lane Departure": 0.8,
-        "Minor Multi-Vehicle Contact": 0.6,
-        "Single Vehicle Incident": 0.7,
-        "Minor Contact / False Positive": 0.2,
-        "No Significant Impact": 0.1
+        "Multi-Vehicle Collision": 3.0,
+        "Side Impact": 2.5,
+        "Rear-End Collision": 2.0,
+        "Vehicle Collision": 2.0,
+        "Single Vehicle Collision": 1.5,
+        "Unknown": 1.0
     }
     severity_score += type_severity.get(collision_type, 1.0)
 
-    # 4. Vehicle involvement factor (0-1.5 points)
-    vehicle_factor = min((involved_vehicles - 1) / 4.0, 1.0) * 1.5
-    severity_score += vehicle_factor
+    # 3. Vehicle involvement (0-2 points)
+    if involved_vehicles >= 3:
+        severity_score += 2.0
+    elif involved_vehicles == 2:
+        severity_score += 1.0
+    else:
+        severity_score += 0.5
 
-    # 5. Duration factor (0-1 point)
+    # 4. Duration factor (0-1 point)
     if crash_duration > 10:
-        duration_factor = min(crash_duration / 20.0, 1.0)
-        severity_score += duration_factor
+        severity_score += 1.0
+    elif crash_duration > 5:
+        severity_score += 0.5
 
-    # 6. Speed factor (0-1 point)
-    if velocities:
-        avg_speed = np.mean(velocities[-10:]) if len(velocities) >= 10 else np.mean(velocities)
-        speed_factor = min(avg_speed / 150.0, 1.0)
-        severity_score += speed_factor
+    # 5. Confidence boost (0-1 point)
+    severity_score += confidence_score
 
     # Normalize to 0-10 scale
     severity_score = min(severity_score, 10.0)
-    severity_score = max(severity_score, 0.0)
 
-    # Determine severity level and emergency dispatch
-    if severity_score >= 7.5:
+    # Determine severity level
+    if severity_score >= 7.0:
         severity_level = "Critical"
         emergency_dispatch = True
-    elif severity_score >= 6.0:
+    elif severity_score >= 5.0:
         severity_level = "Severe"
         emergency_dispatch = True
-    elif severity_score >= 4.0:
+    elif severity_score >= 3.5:
         severity_level = "Moderate"
         emergency_dispatch = True
-    elif severity_score >= 2.5:
+    elif severity_score >= 2.0:
         severity_level = "Minor"
         emergency_dispatch = False
-    elif severity_score >= 1.0:
+    else:
         severity_level = "Very Minor"
         emergency_dispatch = False
-    else:
-        severity_level = "Negligible"
-        emergency_dispatch = False
 
-    # Override dispatch for high-risk scenarios
-    high_risk_types = ["High-Speed Frontal Impact", "Multi-Vehicle Pileup", "Head-On Collision"]
-    if collision_type in high_risk_types or involved_vehicles >= 3:
-        if severity_score >= 3.0:  # Lower threshold for high-risk scenarios
-            emergency_dispatch = True
-
-    # Override for very low probability events
-    if max_probability < 0.2 and not sudden_impact:
-        emergency_dispatch = False
-        if severity_score < 3.0:
-            severity_level = "Very Minor"
+    # Override for high-risk scenarios
+    if collision_type in ["Multi-Vehicle Collision", "Side Impact"] and severity_score >= 3.0:
+        emergency_dispatch = True
 
     return severity_level, round(severity_score, 1), emergency_dispatch
 
@@ -755,15 +864,6 @@ def handle_youtube_input(video_url):
     return video_path, video_title, None
 
 
-def estimate_speed(prev, curr):
-    """Simple speed estimation for compatibility"""
-    if prev is None or curr is None:
-        return 0
-    dx = abs(curr[0] - prev[0])
-    dy = abs(curr[1] - prev[1])
-    return np.sqrt(dx ** 2 + dy ** 2)
-
-
 # Streamlit UI Setup
 with st.sidebar:
     st.markdown("### 🚨 SOTERIA System")
@@ -956,10 +1056,8 @@ idx = 0
 p_scores = []
 frames = []
 analysed_frame_indices = []
-car_count_history = []
-dashcam_centroids = []
+all_vehicle_boxes = []  # Store all vehicle bounding boxes for each frame
 spike_max = 0.0
-spike_dur = 0
 
 # Main video processing loop
 while cap.isOpened():
@@ -968,6 +1066,8 @@ while cap.isOpened():
         break
 
     current_frame = frame.copy()
+    frame_height, frame_width = frame.shape[:2]
+
     if idx % step == 0:
         p = infer_crash(preprocess_classifier(frame))
         p_scores.append(p)
@@ -979,8 +1079,8 @@ while cap.isOpened():
     results = yolo_model(current_frame, verbose=False)[0]
     boxes = results.boxes
 
-    dashcam_y_thresh = frame.shape[0] * 0.75
-    dashcam_box = None
+    # Store vehicle boxes for this frame
+    frame_vehicle_boxes = []
     cars_this_frame = 0
 
     pil_img = Image.fromarray(cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB))
@@ -991,28 +1091,22 @@ while cap.isOpened():
         if yolo_model.names[cls] not in CAR_CLASSES:
             continue
         x1, y1, x2, y2 = list(map(int, box.xyxy[0]))
+        frame_vehicle_boxes.append((x1, y1, x2, y2))
         cars_this_frame += 1
-        if y1 > dashcam_y_thresh:
+
+        # Determine if this is likely the dashcam vehicle (bottom portion of frame)
+        if y1 > frame_height * 0.7:
             tag = "Dashcam Vehicle"
-            dashcam_box = (x1, y1, x2, y2)
+            color = (255, 0, 0)  # Red for dashcam
         else:
-            tag = "Car"
-        draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0), width=3)
+            tag = "Vehicle"
+            color = (0, 255, 0)  # Green for other vehicles
+
+        draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
         draw.text((x1, y1 - 25), tag, fill=(255, 255, 0))
 
-    if not dashcam_box:
-        width, height = frame.shape[1], frame.shape[0]
-        x1, x2 = int(width * 0.05), int(width * 0.95)
-        y1, y2 = int(height * 0.80), int(height * 0.95)
-        dashcam_box = (x1, y1, x2, y2)
-        draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0), width=3)
-        draw.text((x1, y1 - 25), "Dashcam Vehicle (Est.)", fill=(255, 255, 0))
-
-    cx = int((dashcam_box[0] + dashcam_box[2]) / 2)
-    cy = int((dashcam_box[1] + dashcam_box[3]) / 2)
-    dashcam_centroids.append((cx, cy))
-
-    car_count_history.append(cars_this_frame)
+    # Store boxes for this frame
+    all_vehicle_boxes.append(frame_vehicle_boxes)
 
     # Update displays
     with col1:
@@ -1039,8 +1133,7 @@ while cap.isOpened():
         frames = frames[-500:]
         analysed_frame_indices = analysed_frame_indices[-500:]
         p_scores = p_scores[-500:]
-        car_count_history = car_count_history[-500:]
-        dashcam_centroids = dashcam_centroids[-500:]
+        all_vehicle_boxes = all_vehicle_boxes[-500:]
 
     # Adjust sleep for different modes
     if not live_mode:
@@ -1056,22 +1149,22 @@ while cap.isOpened():
 
 cap.release()
 
-# CRASH ANALYSIS SECTION - RESTORED ORIGINAL DETECTION LOGIC
+# SIMPLIFIED CRASH ANALYSIS SECTION
 if len(p_scores) > 5:
     mean_prob = np.mean(p_scores)
     threshold = mean_prob * THRESH_MULTIPLIER
     spike_indices = [i for i, p in enumerate(p_scores) if p > threshold]
 
-    # High confidence detection (single spike method) - RESTORED ORIGINAL THRESHOLD
-    high_prob_indices = [i for i, p in enumerate(p_scores) if p > 0.7]
+    # High confidence detection
+    high_prob_indices = [i for i, p in enumerate(p_scores) if p > 0.4]  # Lowered threshold
 
-    # Multi-spike pattern detection (original method)
+    # Multi-spike pattern detection
     multi_spike_detected = len(spike_indices) >= MIN_SPIKES
 
     # Single high-confidence detection
     high_confidence_detected = len(high_prob_indices) >= 1
 
-    # Combined crash detection logic - RESTORED ORIGINAL LOGIC
+    # Combined crash detection logic
     crash_detected = multi_spike_detected or high_confidence_detected
 
     # Determine which detection method to use for reporting
@@ -1089,168 +1182,172 @@ if len(p_scores) > 5:
         final_spike_indices = []
 
     if crash_detected and final_spike_indices:
-        # IMPROVED CRASH ANALYSIS
-        start_idx = analysed_frame_indices[final_spike_indices[0]]
-        end_idx = analysed_frame_indices[final_spike_indices[-1]]
+        # Get the actual frame indices for crash analysis
+        start_frame_idx = analysed_frame_indices[final_spike_indices[0]]
+        end_frame_idx = analysed_frame_indices[final_spike_indices[-1]]
 
         # Create crash clip
-        clip_start = max(start_idx - int(1.0 * src_fps), 0)
-        clip_end = min(end_idx + int(1.0 * src_fps), len(frames))
+        clip_start = max(start_frame_idx - int(1.0 * src_fps), 0)
+        clip_end = min(end_frame_idx + int(1.0 * src_fps), len(frames))
         clip_frames = frames[clip_start:clip_end]
 
-        height, width, _ = clip_frames[0].shape
-        temp_vid = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        out = cv2.VideoWriter(temp_vid.name, cv2.VideoWriter_fourcc(*'mp4v'), src_fps, (width, height))
-        for f in clip_frames:
-            out.write(f)
-        out.release()
+        if clip_frames:
+            height, width, _ = clip_frames[0].shape
+            temp_vid = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+            out = cv2.VideoWriter(temp_vid.name, cv2.VideoWriter_fourcc(*'mp4v'), src_fps, (width, height))
+            for f in clip_frames:
+                out.write(f)
+            out.release()
 
-        crash_seconds = int(start_idx / src_fps)
-        timestamp_str = f"{crash_seconds // 60:02}:{crash_seconds % 60:02}"
+            crash_seconds = int(start_frame_idx / src_fps)
+            timestamp_str = f"{crash_seconds // 60:02}:{crash_seconds % 60:02}"
 
-        # Calculate max_prob for use throughout analysis
-        max_prob = max(p_scores) if p_scores else 0
+            # Calculate max_prob for use throughout analysis
+            max_prob = max(p_scores) if p_scores else 0
 
-        # ENHANCED CRASH ANALYSIS
-        collision_type, type_confidence, confidence_score = improved_crash_type_classification(
-            dashcam_centroids, car_count_history, final_spike_indices[0], final_spike_indices[-1],
-            p_scores, src_fps
-        )
+            # PEAK FRAME ANALYSIS - Focus on the highest probability moment
+            collision_type, confidence_score, involved_vehicles, involved_boxes, collision_viz = enhanced_peak_frame_analysis(
+                all_vehicle_boxes, analysed_frame_indices, p_scores, frames, frame_width, frame_height
+            )
 
-        # Calculate movement metrics for severity assessment
-        crash_centroids = dashcam_centroids[final_spike_indices[0]:final_spike_indices[-1] + 5]
-        velocities, accelerations = calculate_velocity_and_acceleration(crash_centroids, src_fps)
-        sudden_impact_data = detect_sudden_impact(velocities, accelerations)
+            # Calculate severity
+            crash_duration = final_spike_indices[-1] - final_spike_indices[0] + 1
+            impact_severity, severity_score, dispatch = calculate_severity(
+                collision_type, max_prob, crash_duration, involved_vehicles, confidence_score
+            )
 
-        # Get vehicle involvement
-        involved_vehicles, vehicle_confidence = calculate_vehicle_involvement_score(
-            car_count_history, final_spike_indices[0], final_spike_indices[-1]
-        )
-
-        # Enhanced severity assessment
-        crash_duration = final_spike_indices[-1] - final_spike_indices[0] + 1
-        avg_prob = np.mean([p_scores[i] for i in final_spike_indices])
-
-        impact_severity, severity_score, dispatch = enhanced_severity_assessment(
-            collision_type, max_prob, avg_prob, velocities, accelerations,
-            involved_vehicles, crash_duration, sudden_impact_data
-        )
-
-        # Display enhanced report
-        with col2:
-            report_placeholder.empty()
-
-            st.markdown("""
-            <div class='report-card'>
-                <h3>🚨 Crash Report</h3>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Core incident details with improved formatting
-            confidence_icons = {
-                "Very High": "🟢", "High": "🟢", "Medium": "🟡",
-                "Low": "🟠", "Very Low": "🔴"
-            }
-            confidence_icon = confidence_icons.get(type_confidence, "⚪")
-
-            st.markdown(f"**Collision Type:** {collision_type} {confidence_icon}")
-            st.markdown(f"**Impact Severity:** {impact_severity}")
-            st.markdown(f"**Incident Time:** {timestamp_str}")
-            st.markdown(f"**Vehicles Involved:** {involved_vehicles}")
-            st.markdown(f"**Analysis Confidence:** {type_confidence} ({confidence_score:.2f})")
-            st.markdown(f"**Detection Method:** {detection_method}")
-            st.markdown(f"**Max Probability:** {max_prob:.1%}")
-            st.markdown(f"**Alert Frames:** {len(final_spike_indices)}")
-
-            # Enhanced severity scoring with context
-            if severity_score >= 7:
-                st.markdown(f"**Severity Score:** :red[{severity_score}/10]")
-            elif severity_score >= 4:
-                st.markdown(f"**Severity Score:** :orange[{severity_score}/10]")
+            # Determine confidence level
+            if confidence_score >= 0.8:
+                confidence_level = "Very High"
+            elif confidence_score >= 0.65:
+                confidence_level = "High"
+            elif confidence_score >= 0.45:
+                confidence_level = "Medium"
+            elif confidence_score >= 0.25:
+                confidence_level = "Low"
             else:
-                st.markdown(f"**Severity Score:** :green[{severity_score}/10]")
+                confidence_level = "Very Low"
 
-            # Impact assessment with better descriptions
-            severity_context = {
-                "Critical": "🔴 Life-threatening injuries likely - immediate response required",
-                "Severe": "🟠 Serious injuries probable - priority response needed",
-                "Moderate": "🟡 Moderate injuries possible - standard response",
-                "Minor": "🟢 Minor injuries likely - low priority response",
-                "Very Minor": "🟢 Minimal injuries expected - monitor situation",
-                "Negligible": "⚪ No significant impact detected"
-            }
+            # Display simplified report
+            with col2:
+                report_placeholder.empty()
 
-            if impact_severity in severity_context:
-                st.markdown(f"**Impact Assessment:** {severity_context[impact_severity]}")
+                st.markdown("""
+                <div class='report-card'>
+                    <h3>🚨 Crash Report</h3>
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Emergency response with detailed reasoning
-            if dispatch:
-                st.markdown("**Emergency Response:** :green[✅ DISPATCHED]")
+                # Core incident details
+                confidence_icons = {
+                    "Very High": "🟢", "High": "🟢", "Medium": "🟡",
+                    "Low": "🟠", "Very Low": "🔴"
+                }
+                confidence_icon = confidence_icons.get(confidence_level, "⚪")
 
-                # Provide specific reasoning for dispatch
-                if involved_vehicles >= 3:
-                    st.markdown("*🚑 Multiple vehicles involved - trauma units recommended*")
-                elif severity_score >= 7:
-                    st.markdown("*🚨 High severity impact - immediate response required*")
-                elif "High-Speed" in collision_type or "Head-On" in collision_type:
-                    st.markdown("*⚡ High-energy collision - priority response*")
-                elif sudden_impact_data[0]:  # sudden_impact is True
-                    st.markdown("*💥 Sudden impact detected - medical assessment needed*")
+                st.markdown(f"**Collision Type:** {collision_type} {confidence_icon}")
+                st.markdown(f"**Impact Severity:** {impact_severity}")
+                st.markdown(f"**Incident Time:** {timestamp_str}")
+                st.markdown(f"**Vehicles Involved:** {involved_vehicles}")
+                st.markdown(f"**Analysis Confidence:** {confidence_level} ({confidence_score:.2f})")
+                st.markdown(f"**Detection Method:** {detection_method}")
+                st.markdown(f"**Max Probability:** {max_prob:.1%}")
+                st.markdown(f"**Alert Frames:** {len(final_spike_indices)}")
+
+                # Severity scoring with context
+                if severity_score >= 7:
+                    st.markdown(f"**Severity Score:** :red[{severity_score}/10]")
+                elif severity_score >= 4:
+                    st.markdown(f"**Severity Score:** :orange[{severity_score}/10]")
                 else:
-                    st.markdown("*⚠️ Significant incident detected - response dispatched*")
-            else:
-                st.markdown("**Emergency Response:** :orange[⚠️ Monitoring]")
-                if severity_score < 2.0:
-                    st.markdown("*📞 Very low severity - no immediate response needed*")
-                else:
-                    st.markdown("*📞 Low-moderate severity - monitor for self-reporting*")
+                    st.markdown(f"**Severity Score:** :green[{severity_score}/10]")
 
-            # Download crash clip
-            with open(temp_vid.name, "rb") as f:
-                st.download_button(
-                    label="📥 Download Incident Clip",
-                    data=f.read(),
-                    file_name=f"crash_incident_{timestamp_str.replace(':', '')}.mp4",
-                    mime="video/mp4",
-                    use_container_width=True
-                )
+                # Impact assessment
+                severity_context = {
+                    "Critical": "🔴 Life-threatening injuries likely - immediate response required",
+                    "Severe": "🟠 Serious injuries probable - priority response needed",
+                    "Moderate": "🟡 Moderate injuries possible - standard response",
+                    "Minor": "🟢 Minor injuries likely - low priority response",
+                    "Very Minor": "🟢 Minimal injuries expected - monitor situation"
+                }
 
-            # Detailed analysis expandable section
-            with st.expander("🔍 Detailed Technical Analysis"):
-                st.write(f"**Classification Confidence:** {confidence_score:.1%}")
+                if impact_severity in severity_context:
+                    st.markdown(f"**Impact Assessment:** {severity_context[impact_severity]}")
 
-                if velocities:
-                    st.write(f"**Movement Analysis:**")
-                    avg_velocity = np.mean(velocities[-10:]) if len(velocities) >= 10 else np.mean(velocities)
-                    max_velocity = max(velocities) if velocities else 0
-                    st.write(f"• Average velocity: {avg_velocity:.1f} pixels/second")
-                    st.write(f"• Peak velocity: {max_velocity:.1f} pixels/second")
+                # Emergency response
+                if dispatch:
+                    st.markdown("**Emergency Response:** :green[✅ DISPATCHED]")
 
-                    if sudden_impact_data[0]:  # sudden_impact
-                        st.write(f"• Sudden impact detected: YES")
-                        st.write(f"• Velocity drop: {sudden_impact_data[1]:.1f} pixels/second")
-                        st.write(f"• Max deceleration: {sudden_impact_data[2]:.1f} pixels/second²")
+                    if involved_vehicles >= 3:
+                        st.markdown("*🚑 Multiple vehicles involved - trauma units recommended*")
+                    elif severity_score >= 7:
+                        st.markdown("*🚨 High severity impact - immediate response required*")
+                    elif collision_type in ["Multi-Vehicle Collision", "Side Impact"]:
+                        st.markdown("*⚡ High-energy collision - priority response*")
                     else:
-                        st.write(f"• Sudden impact detected: NO")
+                        st.markdown("*⚠️ Significant incident detected - response dispatched*")
+                else:
+                    st.markdown("**Emergency Response:** :orange[⚠️ Monitoring]")
+                    if severity_score < 2.0:
+                        st.markdown("*📞 Very low severity - no immediate response needed*")
+                    else:
+                        st.markdown("*📞 Low-moderate severity - monitor for self-reporting*")
 
-                st.write(f"**Vehicle Analysis:**")
-                st.write(f"• Vehicle involvement confidence: {vehicle_confidence:.2f}")
-                pre_crash_avg = np.mean(
-                    car_count_history[max(0, final_spike_indices[0] - 30):final_spike_indices[0]]) if \
-                final_spike_indices[0] > 0 else 0
-                crash_avg = np.mean(car_count_history[final_spike_indices[0]:final_spike_indices[-1] + 1])
-                st.write(f"• Pre-crash vehicle average: {pre_crash_avg:.1f}")
-                st.write(f"• During crash average: {crash_avg:.1f}")
+                # Download crash clip
+                with open(temp_vid.name, "rb") as f:
+                    st.download_button(
+                        label="📥 Download Incident Clip",
+                        data=f.read(),
+                        file_name=f"crash_incident_{timestamp_str.replace(':', '')}.mp4",
+                        mime="video/mp4",
+                        use_container_width=True
+                    )
 
-                st.write(f"**Probability Analysis:**")
-                st.write(f"• Peak probability: {max_prob:.3f}")
-                st.write(f"• Average probability: {avg_prob:.3f}")
-                # Calculate threshold for display
-                display_threshold = mean_prob * THRESH_MULTIPLIER if p_scores else 0
-                st.write(f"• Detection threshold: {display_threshold:.3f}")
-                st.write(f"• Crash duration: {crash_duration} frames ({crash_duration / src_fps:.1f} seconds)")
+                # Display collision visualization if available
+                if collision_viz:
+                    st.markdown("### 🎯 Peak Collision Moment Analysis")
+                    st.image(collision_viz, caption="Frame with highest crash probability showing involved vehicles",
+                             use_container_width=True)
+
+                # Simplified technical analysis
+                with st.expander("🔍 Technical Analysis Details"):
+                    st.write(
+                        f"**Peak Frame Analysis:** Frame {analysed_frame_indices[np.argmax(p_scores)] if p_scores else 'N/A'}")
+                    st.write(f"**Classification Confidence:** {confidence_score:.1%}")
+                    st.write(f"**Crash Duration:** {crash_duration} frames ({crash_duration / src_fps:.1f} seconds)")
+                    st.write(f"**Peak Probability:** {max_prob:.3f}")
+                    st.write(f"**Average Probability:** {np.mean([p_scores[i] for i in final_spike_indices]):.3f}")
+
+                    # Show involved vehicle details
+                    st.write(f"**Involved Vehicle Analysis:**")
+                    st.write(f"• Detected overlapping/colliding vehicles: {len(involved_boxes)}")
+                    st.write(f"• Total involved (including dashcam): {involved_vehicles}")
+
+                    if involved_boxes:
+                        st.write(f"• Vehicle positions at peak moment:")
+                        for i, box in enumerate(involved_boxes):
+                            x1, y1, x2, y2 = box
+                            center_y = (y1 + y2) / 2
+                            is_dashcam = center_y > frame_height * 0.7
+                            vehicle_type = "Dashcam Vehicle" if is_dashcam else f"Other Vehicle {i + 1}"
+                            st.write(f"  - {vehicle_type}: Position ({x1}, {y1}) to ({x2}, {y2})")
+
+                    # Vehicle pattern analysis
+                    if start_frame_idx < len(all_vehicle_boxes) and end_frame_idx < len(all_vehicle_boxes):
+                        pre_crash_vehicles = np.mean([len(boxes) for boxes in all_vehicle_boxes[max(0,
+                                                                                                    start_frame_idx - 10):start_frame_idx]]) if start_frame_idx > 10 else 0
+                        crash_vehicles = np.mean(
+                            [len(boxes) for boxes in all_vehicle_boxes[start_frame_idx:end_frame_idx + 1]])
+
+                        st.write(f"**Scene Vehicle Analysis:**")
+                        st.write(f"• Pre-crash total vehicles in scene: {pre_crash_vehicles:.1f}")
+                        st.write(f"• During crash total vehicles in scene: {crash_vehicles:.1f}")
+                        st.write(f"• Total scene vehicle change: {crash_vehicles - pre_crash_vehicles:+.1f}")
+                        st.write(f"• Actual collision participants: {involved_vehicles}")
+
+
     else:
-        # Enhanced no-crash-detected reporting
+        # No crash detected
         with col2:
             report_placeholder.empty()
 
@@ -1265,7 +1362,7 @@ if len(p_scores) > 5:
             </div>
             """, unsafe_allow_html=True)
 
-            # Provide detailed analysis summary
+            # Analysis summary
             st.info("📊 **Analysis Summary:**")
             col_a, col_b = st.columns(2)
 
@@ -1287,7 +1384,7 @@ if len(p_scores) > 5:
             else:
                 st.success("✅ **Confidence:** Normal driving patterns detected throughout analysis.")
 
-            # Provide recommendations
+            # Recommendations
             with st.expander("💡 Analysis Recommendations"):
                 st.write("**For improved detection accuracy:**")
                 st.write("• Ensure video shows clear view of road and traffic")
