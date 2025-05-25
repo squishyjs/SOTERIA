@@ -26,6 +26,8 @@ apply_dark_glass()
 from detectors.yolo import load as load_yolo, detect, CAR_CLASSES
 yolo = load_yolo()                # cached by @st.cache_resource
 
+from severity import SeverityTracker
+
 
 ###############################################################################
 # 📦 MODEL LOADING
@@ -57,14 +59,22 @@ with st.sidebar:
     fps_target = st.slider("Analyse FPS", 1, 30, 30)
     crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.60, 0.01)
     high_th    = st.slider("High-risk threshold", 0.3, crit_th, 0.50, 0.01)
+    dispatch_th = st.slider("Dispatch threshold", 0.30, 1.0, 0.70, 0.01)
     st.caption("_High-risk < Critical_")
     src_file   = st.file_uploader("📤 Upload image/video", ["jpg","jpeg","png","mp4"])
     st.caption(f"Model: **{BEST.relative_to(ROOT)}**")
+    # NEW – optional webhook (blank = disabled)
+    dispatch_url = st.text_input(
+        "Dispatch webhook URL (leave blank to disable)",
+        value="",                          # "" → does nothing
+        placeholder="https://httpbin.org/post"
+    )
 
 if not src_file:
     st.info("⬅️ Upload an image or video to begin")
     st.stop()
 
+alert_ph = st.empty()          # stays empty unless we trigger it
 ###############################################################################
 # ⏭️ SAVE UPLOAD TO TEMP
 ###############################################################################
@@ -110,6 +120,7 @@ with col_vid:
 # ----- placeholders (fixes metric spam) -----
 metric_ph = col_metrics.empty()   # single metric
 metric2_ph  = col_metrics.empty()   # active vehicles 👈 new
+metric3_ph = col_metrics.empty()    #   <<< ADD THIS LINE
 lat_ph    = col_metrics.empty()   # single caption
 
 try:
@@ -123,6 +134,7 @@ frames: list[np.ndarray] = []
 idx = analysed = 0
 prev_p = None
 last_time = time.perf_counter()
+tracker = SeverityTracker()
 
 while cap.isOpened():
     ok, frame = cap.read()
@@ -130,81 +142,111 @@ while cap.isOpened():
         break
 
     frames.append(frame.copy())
-    boxes = detect(yolo, frame)  # ← YOLO inference
-    cars = [b for b in boxes if b["cls"] in CAR_CLASSES]
-    car_count_history.append(len(cars))  # feed statistics
+
+    # ── YOLO (always) ─────────────────────────────────────────────
+    boxes = detect(yolo, frame)
+    cars  = [b for b in boxes if b["cls"] in CAR_CLASSES]
+    car_count_history.append(len(cars))
+
+    analysed_frame = (idx % step == 0)          # cadence gate
     start = time.perf_counter()
-    if idx % step == 0:
+
+    # ── classifier on analysed frames only ───────────────────────
+    if analysed_frame:
         p = infer(frame)
         analysed += 1
-        prev_p = p
+        prev_p   = p
+    else:
+        p = prev_p or 0.0                       # reuse last prob
+
+    # ── update severity tracker (flow skipped when analysed_frame=False)
+    tracker.update(frame, p, len(cars), high_th,
+                   analysed_frame=analysed_frame)
+
+    # ── UI that needs only analysed frames ───────────────────────
+    if analysed_frame:
         trend_pts.append({"f": idx, "p": p})
 
-        # 1️⃣   Draw threshold lines on the spark-line
-        rules = alt.Chart(pd.DataFrame({
-            "y": [high_th, crit_th],
-            "colour": ["amber", "red"]
-        })).mark_rule(strokeDash=[4, 2]).encode(y='y:Q', color=alt.Color('colour:N', scale=None))
+        rules = alt.Chart(pd.DataFrame({"y": [high_th, crit_th],
+                                        "colour": ["amber", "red"]})
+                 ).mark_rule(strokeDash=[4, 2]).encode(
+                     y='y:Q', color=alt.Color('colour:N', scale=None))
 
-        chart = (
-                alt.Chart(alt.Data(values=trend_pts))
-                .mark_line(strokeWidth=1.5, color=PRIMARY)
-                .encode(
-                    x=alt.X("f:Q", title=None),
-                    y=alt.Y("p:Q", scale=alt.Scale(domain=[0, 1]), title=None)
-                )
-                .properties(height=100, width="container")
-                + rules
-        )
+        chart = (alt.Chart(alt.Data(values=trend_pts))
+                 .mark_line(strokeWidth=1.5, color=PRIMARY)
+                 .encode(x=alt.X("f:Q", title=None),
+                         y=alt.Y("p:Q", scale=alt.Scale(domain=[0, 1]), title=None))
+                 .properties(height=100, width="container") + rules)
+
         chart_ph.altair_chart(chart, use_container_width=True)
 
         if p >= crit_th:
-            crit_frames.append((idx,p,frame.copy()))
+            crit_frames.append((idx, p, frame.copy()))
         elif p >= high_th:
-            high_frames.append((idx,p,frame.copy()))
-    else:
-        p = prev_p or 0.0
+            high_frames.append((idx, p, frame.copy()))
 
-    # draw YOLO boxes
+    # ── draw YOLO boxes ───────────────────────────────────────────
     for det in cars:
         x1, y1, x2, y2 = det["xyxy"]
-        colour = det["colour"]  # already BGR
-
-        # ── box ────────────────────────────────────────────
+        colour = det["colour"]
         cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
+        cv2.putText(frame,
+                    f"{det['cls']} {det['score']*100:.0f}%",
+                    (x1, max(15, y1 - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, colour, 1, cv2.LINE_AA)
 
-        # ── label (class + conf) ───────────────────────────
-        label = f"{det['cls']} {det['score'] * 100:.0f}%"
-        # putText: img, text, org, font, scale, colour, thickness, AA
-        cv2.putText(
-            frame, label, (x1, max(15, y1 - 8)),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.45, colour, 1, cv2.LINE_AA
-        )
-
-    # overlay probability box
-    over  = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    draw  = ImageDraw.Draw(over)
-    colour = SUCCESS if p < 0.5 else PRIMARY
-    draw.rectangle([(0,0),(220,45)], fill=colour+"bf")
-    draw.text((12,10), f"p = {p:.2%}", font=FONT, fill="white")
-
+    # ── overlay & per-frame metrics ──────────────────────────────
+    over   = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw   = ImageDraw.Draw(over)
+    box_col = SUCCESS if p < 0.5 else PRIMARY
+    draw.rectangle([(0, 0), (220, 45)], fill=box_col + "bf")
+    draw.text((12, 10), f"p = {p:.2%}", font=FONT, fill="white")
     vid_ph.image(over, use_column_width=True)
 
     metric_ph.metric("Crash probability", f"{p:.1%}")
     metric2_ph.metric("Active vehicles", f"{len(cars)}")
-    progress.progress(idx/total_fr, text=f"{idx}/{total_fr} frames")
+    progress.progress(idx / total_fr, text=f"{idx}/{total_fr} frames")
 
-    lat_ms = (time.perf_counter()-start)*1000
-    lat_ph.caption(f"Latency {lat_ms:.1f} ms · Inference FPS {analysed/(idx+1):.2f}")
+    lat_ms = (time.perf_counter() - start) * 1000
+    lat_ph.caption(f"Latency {lat_ms:.1f} ms · Inference FPS {analysed / (idx + 1):.2f}")
 
-    # frame pacing
-    delta = 1/src_fps - (time.perf_counter()-last_time)
+    # pacing
+    delta = 1 / src_fps - (time.perf_counter() - last_time)
     if delta > 0:
         time.sleep(delta)
     last_time = time.perf_counter()
     idx += 1
 
+
+
+# ───── finalise severity & show metric ────────────────────────────
+sev, sev_cls = tracker.result()
+metric3_ph.metric("Severity", f"{sev:.2f}", delta=sev_cls,
+                  delta_color="inverse")
+
+# ───── optional dispatch hook ─────────────────────────────────────
+if dispatch_url and sev >= dispatch_th:
+    import requests
+    try:
+        r = requests.post(
+            dispatch_url,
+            json=dict(
+                timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                severity  = sev,
+                class_    = sev_cls,
+                vehicles  = int(tracker.stats["cars"] * tracker.car_max),
+                src       = src_file.name,
+            ),
+            timeout=3,
+        )
+        r.raise_for_status()          # surface HTTP errors
+        st.success("🚑 Emergency dispatch notified")
+    except Exception as e:
+        st.error(f"Dispatch failed → {e}")
+
 cap.release()
+
+
 ###############################################################################
 # 🎬 INCIDENT CLIP  ·  FRAME GALLERIES  ·  EXPORTS
 ###############################################################################
