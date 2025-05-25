@@ -168,7 +168,18 @@ while cap.isOpened():
     # draw YOLO boxes
     for det in cars:
         x1, y1, x2, y2 = det["xyxy"]
-        cv2.rectangle(frame, (x1, y1), (x2, y2), det["colour"], 2)
+        colour = det["colour"]  # already BGR
+
+        # ── box ────────────────────────────────────────────
+        cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
+
+        # ── label (class + conf) ───────────────────────────
+        label = f"{det['cls']} {det['score'] * 100:.0f}%"
+        # putText: img, text, org, font, scale, colour, thickness, AA
+        cv2.putText(
+            frame, label, (x1, max(15, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.45, colour, 1, cv2.LINE_AA
+        )
 
     # overlay probability box
     over  = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
