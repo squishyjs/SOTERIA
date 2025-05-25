@@ -1016,7 +1016,7 @@ while cap.isOpened():
 
     # Update displays
     with col1:
-        viewer.image(np.array(pil_img), channels="RGB", use_container_width=True)
+        viewer.image(np.array(pil_img), channels="RGB", use_column_width=True)
 
         # Different progress display for live vs recorded
         if live_mode or total_frames == float('inf'):
