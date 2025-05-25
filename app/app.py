@@ -81,6 +81,13 @@ if not src_file:
     st.stop()
 
 alert_ph = st.empty()          # stays empty unless we trigger it
+
+# ── NEW helper: render full-width banner ─────────────────────────
+def show_severe_banner(msg: str):
+    alert_ph.markdown(
+        f'<div class="alert-banner">🚑 {msg}</div>',
+        unsafe_allow_html=True
+    )
 ###############################################################################
 # ⏭️ SAVE UPLOAD TO TEMP
 ###############################################################################
@@ -228,12 +235,8 @@ while cap.isOpened():
         metric3_ph.metric("Severity", f"{sev:.2f}", delta=sev_cls,
                           delta_color="inverse")
 
-        # 🚑  flash banner on first Severe
         if (sev_cls == "Severe") and ("alert_shown" not in st.session_state):
-            alert_ph.error(
-                "🚨 **SEVERE CRASH DETECTED – IMMEDIATE ACTION REQUIRED!**",
-                icon="🚑",
-            )
+            show_severe_banner("SEVERE CRASH DETECTED – IMMEDIATE ACTION REQUIRED!")
             st.session_state.alert_shown = True
 
         # 🔔  dispatch webhook the moment sev ≥ dispatch_th (once per run)
@@ -509,7 +512,7 @@ if crit_frames or high_frames:
         mime="application/zip",
         use_container_width=True,
     )
-
+alert_ph.empty()    # remove banner when run is done
 st.success(f"✅ Finished – analysed {analysed}/{total_fr} frames")
 
 

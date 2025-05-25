@@ -45,4 +45,24 @@ section[data-testid="stSidebar"] .stSlider>div{margin-top:6px}
     animation: blink 1s linear infinite;
   }
   @keyframes blink { 50% { opacity: 0.25; } }
+
+  /* ─── SEVERE-CRASH BANNER ───────────────────────────────── */
+.alert-banner{
+    position:fixed;
+    top:0; left:0; right:0;        /* full viewport width */
+    background:var(--accent);
+    color:#fff;
+    text-align:center;
+    padding:0.9rem 0;
+    font-size:1.35rem;
+    font-weight:600;
+    letter-spacing:.4px;
+    box-shadow:0 4px 16px rgba(0,0,0,.45);
+    z-index:2147483647;            /* higher than sidebar */
+    animation:pulse 1s ease-in-out infinite alternate;
+}
+
+
+/* soft “zoom” pulse */
+@keyframes pulse { from{transform:scale(1);} to{transform:scale(1.04);} }
 </style>
