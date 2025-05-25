@@ -166,9 +166,9 @@ while cap.isOpened():
         p = prev_p or 0.0
 
     # draw YOLO boxes
-    for b in cars:
-        x1, y1, x2, y2 = b["xyxy"]
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    for det in cars:
+        x1, y1, x2, y2 = det["xyxy"]
+        cv2.rectangle(frame, (x1, y1), (x2, y2), det["colour"], 2)
 
     # overlay probability box
     over  = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
