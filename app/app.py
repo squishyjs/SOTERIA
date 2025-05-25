@@ -139,7 +139,8 @@ frames: list[np.ndarray] = []
 idx = analysed = 0
 prev_p = None
 last_time = time.perf_counter()
-tracker = SeverityTracker()
+tracker = SeverityTracker(low_cut=0.30,
+                          high_cut=dispatch_th)
 sev, sev_cls = 0.0, "Minor"
 
 while cap.isOpened():

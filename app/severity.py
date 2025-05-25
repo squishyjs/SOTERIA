@@ -31,18 +31,28 @@ def flow_mag(prev_bgr: np.ndarray, curr_bgr: np.ndarray) -> float:
 
 
 class SeverityTracker:
-    """Collect per‑frame features and compute severity score/class."""
+    """Collect per-frame features and compute severity score/class."""
 
     def __init__(
         self,
-        flow_max: float = FLOW_MAX,
-        car_max:  int   = CAR_MAX,
-        weights: dict[str, float] = WEIGHTS,
+        *,
+        flow_max:  float = FLOW_MAX,
+        car_max:   int   = CAR_MAX,
+        weights:   dict[str, float] = WEIGHTS,
+        low_cut:   float = 0.30,   # Minor  → Moderate  when score ≥ this
+        high_cut:  float = 0.60    # Moderate → Severe  when score ≥ this
     ) -> None:
+        # --- normalisation constants ---------------------------------------
         self.flow_max   = flow_max
         self.car_max    = car_max
+
+        # --- scoring knobs --------------------------------------------------
         self.weights    = weights
-        self.stats      = defaultdict(float)  # p_peak, dur_high, delta_v, cars
+        self.low_cut    = low_cut
+        self.high_cut   = high_cut
+
+        # --- running stats --------------------------------------------------
+        self.stats      = defaultdict(float)     # p_peak, dur_high, delta_v, cars
         self.prev_frame: np.ndarray | None = None
         self.frames     = 0
 
@@ -77,8 +87,7 @@ class SeverityTracker:
 
         score = sum(self.weights[k] * self.stats[k] for k in self.weights)
         score = float(np.clip(score, 0.0, 1.0))
-        LOW_CUT = 0.30
-        HIGH_CUT = 0.60
-
-        cls = ("Minor", "Moderate", "Severe")[(score > LOW_CUT) + (score > HIGH_CUT)]
+        LOW = self.low_cut
+        HIGH = self.high_cut
+        cls = ("Minor", "Moderate", "Severe")[(score >= LOW) + (score >= HIGH)]
         return score, cls
