@@ -21,7 +21,7 @@ import re
 import urllib.parse
 import yt_dlp
 
-st.set_page_config(page_title="SOTERIA - Crash Detection", page_icon="🚨", layout="wide")
+st.set_page_config(page_title="LIVE CRASH DETECTION (SOTERIA)", page_icon="🚨", layout="wide")
 
 st.markdown("""
 <style>
@@ -131,7 +131,7 @@ def preprocess_classifier(bgr: np.ndarray) -> np.ndarray:
     CRITICAL: Keep this exactly as the working version to maintain model compatibility
     """
     img = cv2.resize(bgr, (IMG_SZ, IMG_SZ))
-    img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     return img.transpose(2, 0, 1)[None]
 
 
@@ -1110,7 +1110,7 @@ while cap.isOpened():
 
     # Update displays
     with col1:
-        viewer.image(np.array(pil_img), channels="RGB", use_container_width=True)
+        viewer.image(np.array(pil_img), channels="RGB", use_column_width=True)
 
         # Different progress display for live vs recorded
         if live_mode or total_frames == float('inf'):
