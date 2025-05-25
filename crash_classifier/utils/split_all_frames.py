@@ -47,7 +47,7 @@ for cls in ("positive", "negative"):
     for img in folder.iterdir():
         if img.suffix.lower() not in (".jpg", ".jpeg", ".png"):
             continue
-        stem = "_".join(img.name.split("_")[:2])   # accident_000371
+        stem = "_".join(img.name.split("_")[:2])
         groups[(stem, cls)].append(img)
     if args.debug:
         print(f"   • {cls:<8}: {len(groups)} grouped entries so far…")
