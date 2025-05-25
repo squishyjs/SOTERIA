@@ -8,6 +8,7 @@ app/app.py – SOTERIA crash-detection demo (2025-05-13, dark-theme refresh v2)
 • **FIX:** right-side metrics now use single placeholders (no spam)
 """
 from __future__ import annotations
+from report import generate_incident_report
 import csv, io, zipfile, tempfile, time
 from pathlib import Path
 import os
@@ -104,7 +105,7 @@ def infer(bgr: np.ndarray) -> float:
 with st.sidebar:
     st.markdown("## ⚙️ Settings")
     fps_target = st.slider("Analyse FPS", 1, 30, 30)
-    crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.80, 0.01)
+    crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.60, 0.01)
     high_th    = st.slider("High-risk threshold", 0.3, crit_th, 0.50, 0.01)
     st.caption("_High-risk < Critical_")
     src_file   = st.file_uploader("📤 Upload image/video", ["jpg","jpeg","png","mp4"])
@@ -298,8 +299,13 @@ def gallery(title: str, data):
 gallery(f"🚨 Critical ({len(crit_frames)})", crit_frames)
 gallery(f"⚠️ High-risk ({len(high_frames)})", high_frames)
 
-# --- instant-replay clip -----------------------------------------------------
-if crit_frames:                                           # at least one spike
+# ──────────────────────────────────────────────────────────────────────────────
+# 🎬  INSTANT-REPLAY CLIP  ●  PDF INCIDENT REPORT  ●  FRAMES+CSV ZIP
+# ──────────────────────────────────────────────────────────────────────────────
+clip_path: str | None = None
+
+# 1️⃣  Build the 3-second “instant-replay” MP4 (2 s pre + 1 s post)
+if crit_frames:                               # at least one critical spike
     first_idx = crit_frames[0][0]
     last_idx  = crit_frames[-1][0]
 
@@ -308,7 +314,7 @@ if crit_frames:                                           # at least one spike
         pre_sec=2, post_sec=1
     )
 
-    # inline preview (optional – comment out if not desired)
+    # inline preview (remove if you’d rather not auto-play)
     st.video(clip_path, start_time=0)
 
     with open(clip_path, "rb") as f:
@@ -319,19 +325,64 @@ if crit_frames:                                           # at least one spike
             mime="video/mp4",
             use_container_width=True,
         )
+# ──────────────────────────────────────────────
+# 2️⃣  One-page PDF incident report (optional)
+#     • only if we built an incident clip above
+#     • hides the button when PDF generation fails
+# ──────────────────────────────────────────────
+if clip_path:
+    from report import generate_incident_report   # imported *inside* the block
 
-# --- zip of all flagged frames + CSV summary ---------------------------------
+    pdf_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    chart_ok = generate_incident_report(          # returns True/False
+        out_path        = pdf_tmp.name,
+        clip_path       = clip_path,
+        critical_frames = crit_frames,
+        high_frames     = high_frames,
+        timeline_df     = pd.DataFrame(trend_pts),   # columns: f , p
+        crit_th         = crit_th,
+        high_th         = high_th,
+        model_name      = BEST.name,
+        src_name        = src_file.name,
+    )
+
+    if chart_ok:   # timeline successfully embedded
+        with open(pdf_tmp.name, "rb") as f:
+            st.download_button(
+                "📄 Download 1-page Incident Report (PDF)",
+                f.read(),
+                "incident_report.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+    else:          # PDF created but without the chart
+        st.warning(
+            "ℹ️ The PDF was generated, but the timeline chart could not be "
+            "embedded (missing **vl-convert** or head-less Chrome)."
+        )
+        with open(pdf_tmp.name, "rb") as f:
+            st.download_button(
+                "📄 Download Incident Report (chart-less)",
+                f.read(),
+                "incident_report.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+# ──────────────────────────────────────────────
+# 3️⃣  ZIP of all flagged frames + CSV summary
+# ──────────────────────────────────────────────
 if crit_frames or high_frames:
     buf, csv_buf = io.BytesIO(), io.StringIO()
     with zipfile.ZipFile(buf, "w") as z:
-        w = csv.writer(csv_buf)
-        w.writerow(["frame_idx", "prob", "tier"])
+        writer = csv.writer(csv_buf)
+        writer.writerow(["frame_idx", "probability", "tier"])
         for tier, frameset in (("critical", crit_frames),
                                ("high",     high_frames)):
             for ix, prob, img in frameset:
                 _, jpg = cv2.imencode(".jpg", img)
                 z.writestr(f"{tier}_{ix}.jpg", jpg.tobytes())
-                w.writerow([ix, prob, tier])
+                writer.writerow([ix, prob, tier])
         z.writestr("summary.csv", csv_buf.getvalue())
 
     st.download_button(
@@ -342,4 +393,6 @@ if crit_frames or high_frames:
         use_container_width=True,
     )
 
-st.success(f"✅ Finished · analysed {analysed}/{total_fr} frames")
+st.success(f"✅ Finished – analysed {analysed}/{total_fr} frames")
+
+

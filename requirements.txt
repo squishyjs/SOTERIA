@@ -18,3 +18,11 @@ pytube>=15.0
 streamlit>=1.33
 tqdm>=4.66
 
+
+pandas~=2.2.3
+opencv-python~=4.11.0.86
+numpy~=1.26.4
+onnxruntime~=1.21.1
+altair~=5.5.0
+pillow~=10.4.0
+reportlab~=4.4.1
