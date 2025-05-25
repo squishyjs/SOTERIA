@@ -77,5 +77,8 @@ class SeverityTracker:
 
         score = sum(self.weights[k] * self.stats[k] for k in self.weights)
         score = float(np.clip(score, 0.0, 1.0))
-        cls   = ("Minor", "Moderate", "Severe")[(score > 0.33) + (score > 0.66)]
+        LOW_CUT = 0.30
+        HIGH_CUT = 0.60
+
+        cls = ("Minor", "Moderate", "Severe")[(score > LOW_CUT) + (score > HIGH_CUT)]
         return score, cls

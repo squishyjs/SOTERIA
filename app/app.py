@@ -171,35 +171,67 @@ while cap.isOpened():
 
     # ── UI that needs only analysed frames ───────────────────────
     if analysed_frame:
+        # 1️⃣  update spark-line ------------------------------------------------
         trend_pts.append({"f": idx, "p": p})
 
-        rules = alt.Chart(pd.DataFrame({"y": [high_th, crit_th],
-                                        "colour": ["amber", "red"]})
-                 ).mark_rule(strokeDash=[4, 2]).encode(
-                     y='y:Q', color=alt.Color('colour:N', scale=None))
+        rules = alt.Chart(
+            pd.DataFrame({"y": [high_th, crit_th],
+                          "colour": ["amber", "red"]})
+        ).mark_rule(strokeDash=[4, 2]).encode(
+            y='y:Q', color=alt.Color('colour:N', scale=None))
 
-        chart = (alt.Chart(alt.Data(values=trend_pts))
-                 .mark_line(strokeWidth=1.5, color=PRIMARY)
-                 .encode(x=alt.X("f:Q", title=None),
-                         y=alt.Y("p:Q", scale=alt.Scale(domain=[0, 1]), title=None))
-                 .properties(height=100, width="container") + rules)
-
+        chart = (
+            alt.Chart(alt.Data(values=trend_pts))
+            .mark_line(strokeWidth=1.5, color=PRIMARY)
+            .encode(x=alt.X("f:Q", title=None),
+                    y=alt.Y("p:Q", scale=alt.Scale(domain=[0, 1]), title=None))
+            .properties(height=100, width="container") + rules
+        )
         chart_ph.altair_chart(chart, use_container_width=True)
 
+        # 2️⃣  collect key frames ---------------------------------------------
         if p >= crit_th:
             crit_frames.append((idx, p, frame.copy()))
         elif p >= high_th:
             high_frames.append((idx, p, frame.copy()))
 
-    if analysed_frame:
+        # 3️⃣  severity & real-time actions -----------------------------------
         sev, sev_cls = tracker.result()
-        metric3_ph.metric("Severity", f"{sev:.2f}", delta=sev_cls, delta_color="inverse")
+        metric3_ph.metric("Severity", f"{sev:.2f}", delta=sev_cls,
+                          delta_color="inverse")
+
+        # 🚑  flash banner on first Severe
         if (sev_cls == "Severe") and ("alert_shown" not in st.session_state):
             alert_ph.error(
                 "🚨 **SEVERE CRASH DETECTED – IMMEDIATE ACTION REQUIRED!**",
                 icon="🚑",
             )
             st.session_state.alert_shown = True
+
+        # 🔔  dispatch webhook the moment sev ≥ dispatch_th (once per run)
+        if (
+            dispatch_url
+            and sev >= dispatch_th
+            and "dispatch_sent" not in st.session_state
+        ):
+            import requests, json, datetime
+            try:
+                requests.post(
+                    dispatch_url,
+                    json=dict(
+                        timestamp = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                        severity  = sev,
+                        class_    = sev_cls,
+                        vehicles  = int(tracker.stats["cars"] * tracker.car_max),
+                        src       = src_file.name,
+                    ),
+                    timeout=3,
+                )
+                st.session_state.dispatch_sent = True
+                st.success("🚑 Emergency dispatch notified")
+            except Exception as e:
+                st.error(f"Dispatch failed → {e}")
+
 
     # ── draw YOLO boxes ───────────────────────────────────────────
     for det in cars:
@@ -237,6 +269,7 @@ while cap.isOpened():
 
 
 # ───── optional dispatch hook ─────────────────────────────────────
+sev, sev_cls = tracker.result()
 if dispatch_url and sev >= dispatch_th:
     import requests
     try:
