@@ -12,6 +12,7 @@ pip-wheel-metadata/
 *.log
 
 # Virtual-envs & environment files
+.venv/
 venv/
 .env/
 *.env
@@ -42,3 +43,6 @@ Thumbs.db
 
 # macOS virtual folders
 __MACOSX/
+
+# exports
+exports/
