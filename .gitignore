@@ -43,3 +43,6 @@ Thumbs.db
 
 # macOS virtual folders
 __MACOSX/
+
+# export
+exports/
