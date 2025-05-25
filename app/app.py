@@ -1300,14 +1300,14 @@ if len(p_scores) > 5:
                         data=f.read(),
                         file_name=f"crash_incident_{timestamp_str.replace(':', '')}.mp4",
                         mime="video/mp4",
-                        use_container_width=True
+                        use_column_width=True
                     )
 
                 # Display collision visualization if available
                 if collision_viz:
                     st.markdown("### 🎯 Peak Collision Moment Analysis")
                     st.image(collision_viz, caption="Frame with highest crash probability showing involved vehicles",
-                             use_container_width=True)
+                             use_column_width=True)
 
                 # Simplified technical analysis
                 with st.expander("🔍 Technical Analysis Details"):
