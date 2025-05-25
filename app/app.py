@@ -17,8 +17,15 @@ import pandas as pd
 import cv2, numpy as np, onnxruntime as ort, streamlit as st, altair as alt
 from PIL import Image, ImageDraw, ImageFont
 
+
+# loading themes
 from ui.theme import apply_dark_glass, PRIMARY, SUCCESS
 apply_dark_glass()
+
+# loading detectors
+from detectors.yolo import load as load_yolo, detect, CAR_CLASSES
+yolo = load_yolo()                # cached by @st.cache_resource
+
 
 ###############################################################################
 # 📦 MODEL LOADING
@@ -102,6 +109,7 @@ with col_vid:
 
 # ----- placeholders (fixes metric spam) -----
 metric_ph = col_metrics.empty()   # single metric
+metric2_ph  = col_metrics.empty()   # active vehicles 👈 new
 lat_ph    = col_metrics.empty()   # single caption
 
 try:
@@ -110,6 +118,7 @@ except OSError:
     FONT = ImageFont.load_default()
 
 crit_frames, high_frames, trend_pts = [], [], []
+car_count_history = []          # 👈 you forgot to re-create this
 frames: list[np.ndarray] = []
 idx = analysed = 0
 prev_p = None
@@ -121,6 +130,9 @@ while cap.isOpened():
         break
 
     frames.append(frame.copy())
+    boxes = detect(yolo, frame)  # ← YOLO inference
+    cars = [b for b in boxes if b["cls"] in CAR_CLASSES]
+    car_count_history.append(len(cars))  # feed statistics
     start = time.perf_counter()
     if idx % step == 0:
         p = infer(frame)
@@ -153,6 +165,11 @@ while cap.isOpened():
     else:
         p = prev_p or 0.0
 
+    # draw YOLO boxes
+    for b in cars:
+        x1, y1, x2, y2 = b["xyxy"]
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
     # overlay probability box
     over  = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     draw  = ImageDraw.Draw(over)
@@ -163,6 +180,7 @@ while cap.isOpened():
     vid_ph.image(over, use_column_width=True)
 
     metric_ph.metric("Crash probability", f"{p:.1%}")
+    metric2_ph.metric("Active vehicles", f"{len(cars)}")
     progress.progress(idx/total_fr, text=f"{idx}/{total_fr} frames")
 
     lat_ms = (time.perf_counter()-start)*1000
