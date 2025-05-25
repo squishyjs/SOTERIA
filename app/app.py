@@ -62,6 +62,7 @@ def load_logo():
 # 🖥️ SIDEBAR – INPUT & SETTINGS
 ###############################################################################
 with st.sidebar:
+    dispatch_url = ""  # empty ⇒ no dispatch
     st.image(load_logo(), use_column_width=True)
     st.markdown("## ⚙️ Settings")
     fps_target = st.slider("Analyse FPS", 1, 30, 30)
@@ -71,12 +72,6 @@ with st.sidebar:
     st.caption("_High-risk < Critical_")
     src_file   = st.file_uploader("📤 Upload image/video", ["jpg","jpeg","png","mp4"])
     st.caption(f"Model: **{BEST.relative_to(ROOT)}**")
-    # NEW – optional webhook (blank = disabled)
-    dispatch_url = st.text_input(
-        "Dispatch webhook URL (leave blank to disable)",
-        value="",                          # "" → does nothing
-        placeholder="https://httpbin.org/post"
-    )
 
 if not src_file:
     st.info("⬅️ Upload an image or video to begin")
@@ -87,7 +82,7 @@ alert_ph = st.empty()          # stays empty unless we trigger it
 # ── NEW helper: render full-width banner ─────────────────────────
 def show_severe_banner(msg: str):
     alert_ph.markdown(
-        f'<div class="alert-banner">🚑 {msg}</div>',
+        f'<div class="alert-banner">{msg}</div>',
         unsafe_allow_html=True
     )
 ###############################################################################
@@ -125,19 +120,23 @@ step    = max(int(src_fps // fps_target), 1)
 total_fr = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
 
 # 5 : 1 layout – video dominates
-col_vid, col_metrics = st.columns([5,1], gap="medium")
+# col_vid, col_metrics = st.columns([5,1], gap="medium")
+col_vid, col_metrics = st.columns([3, 2], gap="medium")   #  ➜ 60 % / 40 %
 
+run_ctn = col_metrics.container()
 with col_vid:
     vid_ph   = st.empty()
     chart_ph = st.empty()
     progress = st.progress(0.0, text=f"0 / {total_fr}")
 
 # ----- placeholders (fixes metric spam) -----
-metric_ph = col_metrics.empty()   # single metric
-metric2_ph  = col_metrics.empty()   # active vehicles 👈 new
-metric3_ph = col_metrics.empty()    #   <<< ADD THIS LINE
-lat_ph    = col_metrics.empty()   # single caption
-metric_speed_ph = col_metrics.empty()   # ⏩ new line
+with run_ctn:
+    metric_ph        = st.empty()
+    metric2_ph       = st.empty()
+    metric3_ph       = st.empty()
+    lat_ph           = st.empty()
+    metric_speed_ph  = st.empty()
+
 
 # ───── finalise severity & show metric ────────────────────────────
 
@@ -226,11 +225,14 @@ while cap.isOpened():
             y='y:Q', color=alt.Color('colour:N', scale=None))
 
         chart = (
-            alt.Chart(alt.Data(values=trend_pts))
-            .mark_line(strokeWidth=1.5, color=PRIMARY)
-            .encode(x=alt.X("f:Q", title=None),
-                    y=alt.Y("p:Q", scale=alt.Scale(domain=[0, 1]), title=None))
-            .properties(height=100, width="container") + rules
+                alt.Chart(alt.Data(values=trend_pts))
+                .mark_line(strokeWidth=1.5, color=PRIMARY)
+                .encode(
+                    x=alt.X("f:Q", title=None),
+                    y=alt.Y("p:Q", scale=alt.Scale(domain=[0, 1]), title=None)
+                )
+                # ↑↑ give the graph more vertical space
+                .properties(height=160, width="container") + rules
         )
         chart_ph.altair_chart(chart, use_container_width=True)
 
@@ -248,7 +250,7 @@ while cap.isOpened():
                           delta_color="inverse")
 
         if (sev_cls == "Severe") and ("alert_shown" not in st.session_state):
-            show_severe_banner("SEVERE CRASH DETECTED – IMMEDIATE ACTION REQUIRED!")
+            show_severe_banner("🚨 SEVERE CRASH DETECTED – EMERGENCY SERVICES (000) NOTIFIED 🚨")
             st.session_state.alert_shown = True
 
         # 🔔  dispatch webhook the moment sev ≥ dispatch_th (once per run)
@@ -309,13 +311,8 @@ while cap.isOpened():
     tracker.update(frame, p, len(cars), rel_speed, high_th,
                    analysed_frame=analysed_frame)
 
-    # ── overlay & per-frame metrics ──────────────────────────────
-    over   = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    draw   = ImageDraw.Draw(over)
-    box_col = SUCCESS if p < 0.5 else PRIMARY
-    draw.rectangle([(0, 0), (220, 45)], fill=box_col + "bf")
-    draw.text((12, 10), f"p = {p:.2%}", font=FONT, fill="white")
-    vid_ph.image(over, use_column_width=True)
+    # vid_ph.image(frame[:, :, ::-1], use_column_width=True)
+    vid_ph.image(frame[:, :, ::-1], use_column_width=True)  # auto-fit new column
 
     metric_ph.metric("Crash probability", f"{p:.1%}")
     metric2_ph.metric("Active vehicles", f"{len(cars)}")
@@ -336,24 +333,7 @@ while cap.isOpened():
 
 # ───── optional dispatch hook ─────────────────────────────────────
 sev, sev_cls = tracker.result()
-if dispatch_url and sev >= dispatch_th:
-    import requests
-    try:
-        r = requests.post(
-            dispatch_url,
-            json=dict(
-                timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                severity  = sev,
-                class_    = sev_cls,
-                vehicles  = int(tracker.stats["cars"] * tracker.car_max),
-                src       = src_file.name,
-            ),
-            timeout=3,
-        )
-        r.raise_for_status()          # surface HTTP errors
-        st.success("🚑 Emergency dispatch notified")
-    except Exception as e:
-        st.error(f"Dispatch failed → {e}")
+
 
 cap.release()
 
@@ -374,193 +354,195 @@ for ph in (metric_ph, metric2_ph, metric3_ph,
            metric_speed_ph, lat_ph):
     ph.empty()
 
+# **NOW** clear the summary container
+run_ctn.empty()
+
+
 # ───────── SESSION SUMMARY (right column) ─────────
-with col_metrics:
-    st.markdown("### ▸ Session summary")
-    st.metric("Peak crash probability", f"{max_prob:.1%}")
-    st.metric("Peak severity score",     f"{max_sev:.2f}")
-    st.metric("Peak relative speed",     f"{rel_speed_peak * src_fps:0.0f} px/s")
+with run_ctn:
+    st.subheader("📊 Report")
+    st.metric("Peak Crash Probability", f"{max_prob:.1%}")
+    st.metric("Peak Severity Score",     f"{max_sev:.2f}")
+    st.metric("Peak Relative Speed",     f"{rel_speed_peak * src_fps:0.0f} px/s")
     if clip_start_s is not None:
-        st.metric("Crash window",
+        st.metric("Crash Window",
                   f"{clip_start_s:,.2f}s – {clip_end_s:,.2f}s")
+
+
 ###############################################################################
 # 🎬 INCIDENT CLIP  ·  FRAME GALLERIES  ·  EXPORTS
 ###############################################################################
+    st.divider()
 
-###############################################################################
-# 🎬 INCIDENT CLIP  ·  FRAME GALLERIES  ·  EXPORTS
-###############################################################################
-st.divider()
+    # --- helper ------------------------------------------------------------------
+    def export_incident_clip(
+        frames: list[np.ndarray],
+        first_idx: int,
+        last_idx:  int,
+        fps: float,
+        pre_sec: int = 2,
+        post_sec: int = 1,
+    ) -> str | None:
+        """
+        Build a short H.264 MP4 containing
+        2 s before → 1 s after the critical window.
+        """
+        if not frames:
+            return None
 
-# --- helper ------------------------------------------------------------------
-def export_incident_clip(
-    frames: list[np.ndarray],
-    first_idx: int,
-    last_idx:  int,
-    fps: float,
-    pre_sec: int = 2,
-    post_sec: int = 1,
-) -> str | None:
-    """
-    Build a short H.264 MP4 containing
-    2 s before → 1 s after the critical window.
-    """
-    if not frames:
-        return None
+        start = max(first_idx - int(pre_sec * fps), 0)
+        end   = min(last_idx  + int(post_sec * fps), len(frames) - 1)
 
-    start = max(first_idx - int(pre_sec * fps), 0)
-    end   = min(last_idx  + int(post_sec * fps), len(frames) - 1)
+        h, w, _ = frames[0].shape
 
-    h, w, _ = frames[0].shape
+        # closed temp file (Windows-safe)
+        fd, filename = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
 
-    # closed temp file (Windows-safe)
-    fd, filename = tempfile.mkstemp(suffix=".mp4")
-    os.close(fd)
+        # try modern codecs first, fall back to mp4v
+        for fourcc_str in ("avc1", "H264", "mp4v"):
+            fourcc  = cv2.VideoWriter_fourcc(*fourcc_str)
+            writer  = cv2.VideoWriter(filename, fourcc, fps, (w, h))
+            if writer.isOpened():
+                break
+        else:
+            st.error("❌ OpenCV cannot open an MP4 writer on this system.")
+            return None
 
-    # try modern codecs first, fall back to mp4v
-    for fourcc_str in ("avc1", "H264", "mp4v"):
-        fourcc  = cv2.VideoWriter_fourcc(*fourcc_str)
-        writer  = cv2.VideoWriter(filename, fourcc, fps, (w, h))
-        if writer.isOpened():
-            break
-    else:
-        st.error("❌ OpenCV cannot open an MP4 writer on this system.")
-        return None
-
-    for fr in frames[start : end + 1]:
-        writer.write(fr)
-    writer.release()
-    return filename
+        for fr in frames[start : end + 1]:
+            writer.write(fr)
+        writer.release()
+        return filename
 
 
 
-# ───────────────────────────────
-# 1️⃣  CRASH-CLIP  DROPDOWN FIRST
-# ───────────────────────────────
-clip_path: str | None = None
+    # ───────────────────────────────
+    # 1️⃣  CRASH-CLIP  DROPDOWN FIRST
+    # ───────────────────────────────
+    clip_path: str | None = None
 
-if crit_frames:
-    first_idx = crit_frames[0][0]
-    last_idx  = crit_frames[-1][0]
+    if crit_frames:
+        first_idx = crit_frames[0][0]
+        last_idx  = crit_frames[-1][0]
 
-    # 👉 real times of the *clip* (after padding)
-    clip_start_s = max(0, first_idx - PRE_SEC * src_fps) / src_fps
-    clip_end_s   = min(len(frames) - 1,
-                       last_idx + POST_SEC * src_fps) / src_fps
+        # 👉 real times of the *clip* (after padding)
+        clip_start_s = max(0, first_idx - PRE_SEC * src_fps) / src_fps
+        clip_end_s   = min(len(frames) - 1,
+                           last_idx + POST_SEC * src_fps) / src_fps
 
-    clip_path = export_incident_clip(
-        frames, first_idx, last_idx, src_fps,
-        pre_sec=PRE_SEC, post_sec=POST_SEC
-    )
+        clip_path = export_incident_clip(
+            frames, first_idx, last_idx, src_fps,
+            pre_sec=PRE_SEC, post_sec=POST_SEC
+        )
 
-    with st.expander(
-        f"💥 Crash Clip • {clip_start_s:,.2f}s – {clip_end_s:,.2f}s",
-        expanded=False,
-    ):
-        st.video(clip_path, start_time=0)
-        with open(clip_path, "rb") as f:
-            st.download_button(
-                "⬇️ Download incident clip",
-                f.read(),
-                file_name=f"incident_{first_idx:06d}.mp4",
-                mime="video/mp4",
-                use_container_width=True,
-                key="download_incident_clip",
-            )
-
-# ───────────────────────────────
-# 2️⃣  FRAME  GALLERIES  AFTERWARD
-# ───────────────────────────────
-def gallery(title: str, frameset):
-    if frameset:
-        with st.expander(title, expanded=False):
-            cols = st.columns(min(5, len(frameset)))
-            for i, (ix, prob, img) in enumerate(frameset):
-                cols[i % len(cols)].image(
-                    img[:, :, ::-1],
-                    caption=f"#{ix}  •  {prob:.2%}",
-                    use_column_width=True,
+        with st.expander(
+            f"💥 Crash Clip • {clip_start_s:,.2f}s – {clip_end_s:,.2f}s",
+            expanded=False,
+        ):
+            st.video(clip_path, start_time=0)
+            with open(clip_path, "rb") as f:
+                st.download_button(
+                    "⬇️ Download incident clip",
+                    f.read(),
+                    file_name=f"incident_{first_idx:06d}.mp4",
+                    mime="video/mp4",
+                    use_container_width=True,
+                    key="download_incident_clip",
                 )
 
-gallery(f"🚨 Critical ({len(crit_frames)})",   crit_frames)
-gallery(f"⚠️ High-risk ({len(high_frames)})",  high_frames)
+    # ───────────────────────────────
+    # 2️⃣  FRAME  GALLERIES  AFTERWARD
+    # ───────────────────────────────
+    def gallery(title: str, frameset):
+        if frameset:
+            with st.expander(title, expanded=False):
+                cols = st.columns(min(5, len(frameset)))
+                for i, (ix, prob, img) in enumerate(frameset):
+                    cols[i % len(cols)].image(
+                        img[:, :, ::-1],
+                        caption=f"#{ix}  •  {prob:.2%}",
+                        use_column_width=True,
+                    )
+
+    gallery(f"🚨 Critical ({len(crit_frames)})",   crit_frames)
+    gallery(f"⚠️ High-risk ({len(high_frames)})",  high_frames)
 
 
-# ──────────────────────────────────────────────
-# 2️⃣  One-page PDF incident report (optional)
-#     • only if we built an incident clip above
-#     • hides the button when PDF generation fails
-# ──────────────────────────────────────────────
-if clip_path:
-    from report import generate_incident_report  # imported *inside* the block
+    # ──────────────────────────────────────────────
+    # 2️⃣  One-page PDF incident report (optional)
+    #     • only if we built an incident clip above
+    #     • hides the button when PDF generation fails
+    # ──────────────────────────────────────────────
+    if clip_path:
+        from report import generate_incident_report  # imported *inside* the block
 
-    pdf_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    chart_ok = generate_incident_report(
+        pdf_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        chart_ok = generate_incident_report(
 
-        out_path=pdf_tmp.name,
-        clip_path=clip_path,
-        critical_frames=crit_frames,
-        high_frames=high_frames,
-        timeline_df=pd.DataFrame(trend_pts),
-        crit_th=crit_th,
-        high_th=high_th,
-        model_name=BEST.name,
-        src_name=src_file.name,
-        # ★ NEW fields expected by the updated report.py ★
-        tracker_stats=tracker.stats,  # dict with p_peak, dur_high, cars…
-        sev=sev,  # final severity score
-        sev_cls=sev_cls,  # "Minor" / "Moderate" / "Severe"
-        rel_speed_peak=rel_speed_peak,  # px / frame
-        src_fps=src_fps,
-    )
-
-    if chart_ok:  # timeline successfully embedded
-        with open(pdf_tmp.name, "rb") as f:
-            st.download_button(
-                "📄 Download 1-page Incident Report (PDF)",
-                f.read(),
-                "incident_report.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-    else:  # PDF created but without the chart
-        st.warning(
-            "ℹ️ The PDF was generated, but the timeline chart could not be "
-            "embedded (missing **vl-convert** or head-less Chrome)."
+            out_path=pdf_tmp.name,
+            clip_path=clip_path,
+            critical_frames=crit_frames,
+            high_frames=high_frames,
+            timeline_df=pd.DataFrame(trend_pts),
+            crit_th=crit_th,
+            high_th=high_th,
+            model_name=BEST.name,
+            src_name=src_file.name,
+            # ★ NEW fields expected by the updated report.py ★
+            tracker_stats=tracker.stats,  # dict with p_peak, dur_high, cars…
+            sev=sev,  # final severity score
+            sev_cls=sev_cls,  # "Minor" / "Moderate" / "Severe"
+            rel_speed_peak=rel_speed_peak,  # px / frame
+            src_fps=src_fps,
         )
-        with open(pdf_tmp.name, "rb") as f:
-            st.download_button(
-                "📄 Download Incident Report (chart-less)",
-                f.read(),
-                "incident_report.pdf",
-                mime="application/pdf",
-                use_container_width=True,
+
+        if chart_ok:  # timeline successfully embedded
+            with open(pdf_tmp.name, "rb") as f:
+                st.download_button(
+                    "📄 Download 1-page Incident Report (PDF)",
+                    f.read(),
+                    "incident_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+        else:  # PDF created but without the chart
+            st.warning(
+                "ℹ️ The PDF was generated, but the timeline chart could not be "
+                "embedded (missing **vl-convert** or head-less Chrome)."
             )
+            with open(pdf_tmp.name, "rb") as f:
+                st.download_button(
+                    "📄 Download Incident Report (chart-less)",
+                    f.read(),
+                    "incident_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
 
-# ──────────────────────────────────────────────
-# 3️⃣  ZIP of all flagged frames + CSV summary
-# ──────────────────────────────────────────────
-if crit_frames or high_frames:
-    buf, csv_buf = io.BytesIO(), io.StringIO()
-    with zipfile.ZipFile(buf, "w") as z:
-        writer = csv.writer(csv_buf)
-        writer.writerow(["frame_idx", "probability", "tier"])
-        for tier, frameset in (("critical", crit_frames),
-                               ("high",     high_frames)):
-            for ix, prob, img in frameset:
-                _, jpg = cv2.imencode(".jpg", img)
-                z.writestr(f"{tier}_{ix}.jpg", jpg.tobytes())
-                writer.writerow([ix, prob, tier])
-        z.writestr("summary.csv", csv_buf.getvalue())
+    # ──────────────────────────────────────────────
+    # 3️⃣  ZIP of all flagged frames + CSV summary
+    # ──────────────────────────────────────────────
+    if crit_frames or high_frames:
+        buf, csv_buf = io.BytesIO(), io.StringIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            writer = csv.writer(csv_buf)
+            writer.writerow(["frame_idx", "probability", "tier"])
+            for tier, frameset in (("critical", crit_frames),
+                                   ("high",     high_frames)):
+                for ix, prob, img in frameset:
+                    _, jpg = cv2.imencode(".jpg", img)
+                    z.writestr(f"{tier}_{ix}.jpg", jpg.tobytes())
+                    writer.writerow([ix, prob, tier])
+            z.writestr("summary.csv", csv_buf.getvalue())
 
-    st.download_button(
-        "⬇️ Download flagged frames + CSV",
-        buf.getvalue(),
-        "crash_frames.zip",
-        mime="application/zip",
-        use_container_width=True,
-    )
-# alert_ph.empty()    # remove banner when run is done
-st.success(f"✅ Finished – analysed {analysed}/{total_fr} frames")
+        st.download_button(
+            "⬇️ Download flagged frames + CSV",
+            buf.getvalue(),
+            "crash_frames.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
+    # alert_ph.empty()    # remove banner when run is done
+    st.success(f"✅ Finished – analysed {analysed}/{total_fr} frames")
 
 
