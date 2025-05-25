@@ -65,7 +65,7 @@ class SeverityTracker:
         self.stats["cars"]   = max(
             self.stats["cars"], min(cars_now / self.car_max, 1.0)
         )
-        if p_crash >= high_th:
+        if analysed_frame and p_crash >= high_th:
             self.stats["dur_high"] += 1
         self.frames += 1
 

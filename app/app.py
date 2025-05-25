@@ -8,6 +8,8 @@ app/app.py – SOTERIA crash-detection demo (2025-05-13, dark-theme refresh v2)
 • **FIX:** right-side metrics now use single placeholders (no spam)
 """
 from __future__ import annotations
+
+
 from report import generate_incident_report
 import csv, io, zipfile, tempfile, time
 from pathlib import Path
@@ -59,7 +61,7 @@ with st.sidebar:
     fps_target = st.slider("Analyse FPS", 1, 30, 30)
     crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.60, 0.01)
     high_th    = st.slider("High-risk threshold", 0.3, crit_th, 0.50, 0.01)
-    dispatch_th = st.slider("Dispatch threshold", 0.30, 1.0, 0.70, 0.01)
+    dispatch_th = st.slider("Dispatch threshold", 0.30, 1.0, 0.60, 0.01)
     st.caption("_High-risk < Critical_")
     src_file   = st.file_uploader("📤 Upload image/video", ["jpg","jpeg","png","mp4"])
     st.caption(f"Model: **{BEST.relative_to(ROOT)}**")
@@ -81,7 +83,7 @@ alert_ph = st.empty()          # stays empty unless we trigger it
 _tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(src_file.name).suffix)
 _tmp.write(src_file.getbuffer()); _tmp.close()
 SRC = _tmp.name
-
+st.session_state.pop("alert_shown", None)
 ###############################################################################
 # 🖼️ IMAGE BRANCH
 ###############################################################################
@@ -123,6 +125,9 @@ metric2_ph  = col_metrics.empty()   # active vehicles 👈 new
 metric3_ph = col_metrics.empty()    #   <<< ADD THIS LINE
 lat_ph    = col_metrics.empty()   # single caption
 
+# ───── finalise severity & show metric ────────────────────────────
+
+
 try:
     FONT = ImageFont.truetype("arial.ttf", 24)
 except OSError:
@@ -135,6 +140,7 @@ idx = analysed = 0
 prev_p = None
 last_time = time.perf_counter()
 tracker = SeverityTracker()
+sev, sev_cls = 0.0, "Minor"
 
 while cap.isOpened():
     ok, frame = cap.read()
@@ -185,6 +191,16 @@ while cap.isOpened():
         elif p >= high_th:
             high_frames.append((idx, p, frame.copy()))
 
+    if analysed_frame:
+        sev, sev_cls = tracker.result()
+        metric3_ph.metric("Severity", f"{sev:.2f}", delta=sev_cls, delta_color="inverse")
+        if (sev_cls == "Severe") and ("alert_shown" not in st.session_state):
+            alert_ph.error(
+                "🚨 **SEVERE CRASH DETECTED – IMMEDIATE ACTION REQUIRED!**",
+                icon="🚑",
+            )
+            st.session_state.alert_shown = True
+
     # ── draw YOLO boxes ───────────────────────────────────────────
     for det in cars:
         x1, y1, x2, y2 = det["xyxy"]
@@ -219,10 +235,6 @@ while cap.isOpened():
 
 
 
-# ───── finalise severity & show metric ────────────────────────────
-sev, sev_cls = tracker.result()
-metric3_ph.metric("Severity", f"{sev:.2f}", delta=sev_cls,
-                  delta_color="inverse")
 
 # ───── optional dispatch hook ─────────────────────────────────────
 if dispatch_url and sev >= dispatch_th:
