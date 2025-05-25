@@ -10,6 +10,7 @@ app/app.py – SOTERIA crash-detection demo (2025-05-13, dark-theme refresh v2)
 from __future__ import annotations
 import csv, io, zipfile, tempfile, time
 from pathlib import Path
+import os
 
 import cv2, numpy as np, onnxruntime as ort, streamlit as st, altair as alt
 from PIL import Image, ImageDraw, ImageFont
@@ -102,8 +103,8 @@ def infer(bgr: np.ndarray) -> float:
 with st.sidebar:
     st.markdown("## ⚙️ Settings")
     fps_target = st.slider("Analyse FPS", 1, 30, 30)
-    crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.90, 0.01)
-    high_th    = st.slider("High-risk threshold", 0.3, crit_th, 0.70, 0.01)
+    crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.80, 0.01)
+    high_th    = st.slider("High-risk threshold", 0.3, crit_th, 0.50, 0.01)
     st.caption("_High-risk < Critical_")
     src_file   = st.file_uploader("📤 Upload image/video", ["jpg","jpeg","png","mp4"])
     st.caption(f"Model: **{BEST.relative_to(ROOT)}**")
@@ -164,6 +165,7 @@ except OSError:
     FONT = ImageFont.load_default()
 
 crit_frames, high_frames, trend_pts = [], [], []
+frames: list[np.ndarray] = []
 idx = analysed = 0
 prev_p = None
 last_time = time.perf_counter()
@@ -173,6 +175,7 @@ while cap.isOpened():
     if not ok:
         break
 
+    frames.append(frame.copy())
     start = time.perf_counter()
     if idx % step == 0:
         p = infer(frame)
@@ -221,38 +224,114 @@ while cap.isOpened():
     idx += 1
 
 cap.release()
-
 ###############################################################################
-# 📸 FRAME GALLERIES & DOWNLOAD
+# 🎬 INCIDENT CLIP  ·  FRAME GALLERIES  ·  EXPORTS
 ###############################################################################
 st.divider()
 
-def gallery(title:str, data):
+# --- helper ------------------------------------------------------------------
+def export_incident_clip(
+    frames: list[np.ndarray],
+    first_idx: int,
+    last_idx:  int,
+    fps:       float,
+    pre_sec:   int = 2,
+    post_sec:  int = 1,
+) -> str | None:
+    """
+    Returns the path to a short H.264 MP4 clip
+    (2 s before first critical frame → 1 s after last).
+    """
+
+    if not frames:
+        return None
+
+    start = max(first_idx - int(pre_sec * fps), 0)
+    end   = min(last_idx  + int(post_sec * fps), len(frames) - 1)
+
+    h,  w, _ = frames[0].shape
+
+    # ---------- create a *closed* temp file (Windows-safe) ----------
+    fd, filename = tempfile.mkstemp(suffix=".mp4")
+    os.close(fd)                        # release handle so OpenCV can write
+
+    # ---------- use H.264 if available, otherwise fall back ----------
+    try_fourcc = ("avc1", "H264", "mp4v")
+    for c in try_fourcc:
+        fourcc = cv2.VideoWriter_fourcc(*c)
+        writer = cv2.VideoWriter(filename, fourcc, fps, (w, h))
+        if writer.isOpened():
+            break
+    else:                               # couldn’t open any codec
+        st.error("❌ OpenCV cannot open an MP4 writer on this system.")
+        return None
+
+    # ---------- write frames ----------
+    for fr in frames[start : end + 1]:
+        writer.write(fr)
+    writer.release()
+
+    return filename
+
+
+# --- tiny image galleries ----------------------------------------------------
+def gallery(title: str, data):
     if data:
         with st.expander(title, expanded="Critical" in title):
-            cols = st.columns(min(5,len(data)))
-            for i,(ix,prob,img) in enumerate(data):
-                cols[i % len(cols)].image(img[:,:,::-1],
-                                          caption=f"#{ix} • {prob:.2%}",
-                                          use_column_width=True)
+            cols = st.columns(min(5, len(data)))
+            for i, (ix, prob, img) in enumerate(data):
+                cols[i % len(cols)].image(
+                    img[:, :, ::-1],
+                    caption=f"#{ix} • {prob:.2%}",
+                    use_column_width=True,
+                )
+
 
 gallery(f"🚨 Critical ({len(crit_frames)})", crit_frames)
 gallery(f"⚠️ High-risk ({len(high_frames)})", high_frames)
 
+# --- instant-replay clip -----------------------------------------------------
+if crit_frames:                                           # at least one spike
+    first_idx = crit_frames[0][0]
+    last_idx  = crit_frames[-1][0]
+
+    clip_path = export_incident_clip(
+        frames, first_idx, last_idx, src_fps,
+        pre_sec=2, post_sec=1
+    )
+
+    # inline preview (optional – comment out if not desired)
+    st.video(clip_path, start_time=0)
+
+    with open(clip_path, "rb") as f:
+        st.download_button(
+            "🎬 Download 3-second incident clip",
+            f.read(),
+            file_name=f"incident_{first_idx:06d}.mp4",
+            mime="video/mp4",
+            use_container_width=True,
+        )
+
+# --- zip of all flagged frames + CSV summary ---------------------------------
 if crit_frames or high_frames:
     buf, csv_buf = io.BytesIO(), io.StringIO()
-    with zipfile.ZipFile(buf,"w") as z:
-        w = csv.writer(csv_buf); w.writerow(["frame_idx","prob","tier"])
-        for tier, frames in (("critical",crit_frames),("high",high_frames)):
-            for ix,prob,img in frames:
+    with zipfile.ZipFile(buf, "w") as z:
+        w = csv.writer(csv_buf)
+        w.writerow(["frame_idx", "prob", "tier"])
+        for tier, frameset in (("critical", crit_frames),
+                               ("high",     high_frames)):
+            for ix, prob, img in frameset:
                 _, jpg = cv2.imencode(".jpg", img)
                 z.writestr(f"{tier}_{ix}.jpg", jpg.tobytes())
                 w.writerow([ix, prob, tier])
         z.writestr("summary.csv", csv_buf.getvalue())
 
-    st.download_button("⬇️ Download frames + CSV",
-                       buf.getvalue(),
-                       "crash_frames.zip",
-                       mime="application/zip")
+    st.download_button(
+        "⬇️ Download flagged frames + CSV",
+        buf.getvalue(),
+        "crash_frames.zip",
+        mime="application/zip",
+        use_container_width=True,
+    )
 
 st.success(f"✅ Finished · analysed {analysed}/{total_fr} frames")
