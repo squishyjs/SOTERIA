@@ -30,7 +30,9 @@ yolo = load_yolo()                # cached by @st.cache_resource
 
 from severity import SeverityTracker
 
-SCALE = 0.5        # 0.5 ➜ 50 % resolution  (tweak 0.33, 0.25, …)
+SCALE     = 0.5       # down-sample factor for optic flow
+PRE_SEC   = 2         # seconds kept *before* first critical frame   ← NEW HERE
+POST_SEC  = 1         # seconds kept *after*  last  critical frame   ← NEW HERE
 ###############################################################################
 # 📦 MODEL LOADING
 ###############################################################################
@@ -149,6 +151,11 @@ crit_frames, high_frames, trend_pts = [], [], []
 car_count_history = []          # 👈 you forgot to re-create this
 frames: list[np.ndarray] = []
 idx = analysed = 0
+
+max_prob = 0.0          # 👈 NEW
+max_sev  = 0.0          # 👈 NEW
+
+
 prev_p = None
 last_time = time.perf_counter()
 tracker = SeverityTracker(low_cut=0.30,
@@ -158,6 +165,9 @@ rel_speed_peak = 0.0
 
 
 prev_gray = None        # ← for optic-flow speed
+
+
+
 
 while cap.isOpened():
     ok, frame = cap.read()
@@ -232,6 +242,8 @@ while cap.isOpened():
 
         # 3️⃣  severity & real-time actions -----------------------------------
         sev, sev_cls = tracker.result()
+        max_prob = max(max_prob, p)  # 👈 NEW
+        max_sev = max(max_sev, sev)  # 👈 NEW
         metric3_ph.metric("Severity", f"{sev:.2f}", delta=sev_cls,
                           delta_color="inverse")
 
@@ -346,10 +358,34 @@ if dispatch_url and sev >= dispatch_th:
 cap.release()
 
 
+
+
+# ---------- crash-window times for the summary ----------
+clip_start_s = clip_end_s = None          # default → no crash
+if crit_frames:
+    first_idx = crit_frames[0][0]
+    last_idx  = crit_frames[-1][0]
+    clip_start_s = max(0, first_idx - PRE_SEC * src_fps) / src_fps
+    clip_end_s   = min(len(frames) - 1,
+                       last_idx + POST_SEC * src_fps) / src_fps
+
+# ─── hide per-frame metrics now that the run is over ─────────────
+for ph in (metric_ph, metric2_ph, metric3_ph,
+           metric_speed_ph, lat_ph):
+    ph.empty()
+
+# ───────── SESSION SUMMARY (right column) ─────────
+with col_metrics:
+    st.markdown("### ▸ Session summary")
+    st.metric("Peak crash probability", f"{max_prob:.1%}")
+    st.metric("Peak severity score",     f"{max_sev:.2f}")
+    st.metric("Peak relative speed",     f"{rel_speed_peak * src_fps:0.0f} px/s")
+    if clip_start_s is not None:
+        st.metric("Crash window",
+                  f"{clip_start_s:,.2f}s – {clip_end_s:,.2f}s")
 ###############################################################################
 # 🎬 INCIDENT CLIP  ·  FRAME GALLERIES  ·  EXPORTS
 ###############################################################################
-st.divider()
 
 ###############################################################################
 # 🎬 INCIDENT CLIP  ·  FRAME GALLERIES  ·  EXPORTS
@@ -397,8 +433,6 @@ def export_incident_clip(
     return filename
 
 
-PRE_SEC  = 2          # keep these two lines together so you only
-POST_SEC = 1          # have to edit in one place later
 
 # ───────────────────────────────
 # 1️⃣  CRASH-CLIP  DROPDOWN FIRST
@@ -420,7 +454,7 @@ if crit_frames:
     )
 
     with st.expander(
-        f"🚨 Crash clip • {clip_start_s:,.2f}s – {clip_end_s:,.2f}s",
+        f"💥 Crash Clip • {clip_start_s:,.2f}s – {clip_end_s:,.2f}s",
         expanded=False,
     ):
         st.video(clip_path, start_time=0)
@@ -526,7 +560,7 @@ if crit_frames or high_frames:
         mime="application/zip",
         use_container_width=True,
     )
-alert_ph.empty()    # remove banner when run is done
+# alert_ph.empty()    # remove banner when run is done
 st.success(f"✅ Finished – analysed {analysed}/{total_fr} frames")
 
 
