@@ -17,65 +17,8 @@ import pandas as pd
 import cv2, numpy as np, onnxruntime as ort, streamlit as st, altair as alt
 from PIL import Image, ImageDraw, ImageFont
 
-###############################################################################
-# 🖼️ GLOBAL THEME & PAGE CONFIG
-###############################################################################
-st.set_page_config(
-    page_title="SOTERIA – Crash Detector",
-    page_icon="🚨",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# ---------- custom CSS (dark, glass, neon) ----------
-st.markdown(
-    """
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-<style>
-:root {
-    --bg:        #0d1117;
-    --panel:     rgba(255,255,255,0.04);
-    --border:    rgba(255,255,255,0.08);
-    --fg:        #e6eefb;
-    --accent:    #ff595e;   /* critical / primary */
-    --success:   #8ac926;   /* safe */
-}
-/* ===== global ===== */
-html, body, [data-testid="stApp"] {
-    background: var(--bg);
-    color: var(--fg);
-    font-family: "Inter", sans-serif;
-}
-[data-testid="stHeader"]{display:none}
-.main{padding-top:2.5rem}
-a{color:var(--accent)}
-/* ===== sidebar ===== */
-section[data-testid="stSidebar"]{
-    background: var(--panel);
-    backdrop-filter: blur(14px);
-    border-right: 1px solid var(--border);
-}
-section[data-testid="stSidebar"] .stSlider>div{margin-top:6px}
-/* ===== video card ===== */
-.card{
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.25);
-    overflow:hidden;
-}
-.overlay-text{
-    position:absolute;top:12px;left:12px;padding:6px 10px;border-radius:8px;
-    font-weight:600;background:rgba(0,0,0,.45);color:#fafafa}
-[data-testid="stMetricValue"]{
-    font-size:2.2rem;font-weight:600;color:var(--accent);
-}
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-PRIMARY, SUCCESS = "#ff595e", "#8ac926"
+from ui.theme import apply_dark_glass, PRIMARY, SUCCESS
+apply_dark_glass()
 
 ###############################################################################
 # 📦 MODEL LOADING
