@@ -351,93 +351,107 @@ cap.release()
 ###############################################################################
 st.divider()
 
+###############################################################################
+# 🎬 INCIDENT CLIP  ·  FRAME GALLERIES  ·  EXPORTS
+###############################################################################
+st.divider()
+
 # --- helper ------------------------------------------------------------------
 def export_incident_clip(
     frames: list[np.ndarray],
     first_idx: int,
     last_idx:  int,
-    fps:       float,
-    pre_sec:   int = 2,
-    post_sec:  int = 1,
+    fps: float,
+    pre_sec: int = 2,
+    post_sec: int = 1,
 ) -> str | None:
     """
-    Returns the path to a short H.264 MP4 clip
-    (2 s before first critical frame → 1 s after last).
+    Build a short H.264 MP4 containing
+    2 s before → 1 s after the critical window.
     """
-
     if not frames:
         return None
 
     start = max(first_idx - int(pre_sec * fps), 0)
     end   = min(last_idx  + int(post_sec * fps), len(frames) - 1)
 
-    h,  w, _ = frames[0].shape
+    h, w, _ = frames[0].shape
 
-    # ---------- create a *closed* temp file (Windows-safe) ----------
+    # closed temp file (Windows-safe)
     fd, filename = tempfile.mkstemp(suffix=".mp4")
-    os.close(fd)                        # release handle so OpenCV can write
+    os.close(fd)
 
-    # ---------- use H.264 if available, otherwise fall back ----------
-    try_fourcc = ("avc1", "H264", "mp4v")
-    for c in try_fourcc:
-        fourcc = cv2.VideoWriter_fourcc(*c)
-        writer = cv2.VideoWriter(filename, fourcc, fps, (w, h))
+    # try modern codecs first, fall back to mp4v
+    for fourcc_str in ("avc1", "H264", "mp4v"):
+        fourcc  = cv2.VideoWriter_fourcc(*fourcc_str)
+        writer  = cv2.VideoWriter(filename, fourcc, fps, (w, h))
         if writer.isOpened():
             break
-    else:                               # couldn’t open any codec
+    else:
         st.error("❌ OpenCV cannot open an MP4 writer on this system.")
         return None
 
-    # ---------- write frames ----------
     for fr in frames[start : end + 1]:
         writer.write(fr)
     writer.release()
-
     return filename
 
 
-# --- tiny image galleries ----------------------------------------------------
-def gallery(title: str, data):
-    if data:
-        with st.expander(title, expanded="Critical" in title):
-            cols = st.columns(min(5, len(data)))
-            for i, (ix, prob, img) in enumerate(data):
-                cols[i % len(cols)].image(
-                    img[:, :, ::-1],
-                    caption=f"#{ix} • {prob:.2%}",
-                    use_column_width=True,
-                )
+PRE_SEC  = 2          # keep these two lines together so you only
+POST_SEC = 1          # have to edit in one place later
 
-
-gallery(f"🚨 Critical ({len(crit_frames)})", crit_frames)
-gallery(f"⚠️ High-risk ({len(high_frames)})", high_frames)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 🎬  INSTANT-REPLAY CLIP  ●  PDF INCIDENT REPORT  ●  FRAMES+CSV ZIP
-# ──────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────
+# 1️⃣  CRASH-CLIP  DROPDOWN FIRST
+# ───────────────────────────────
 clip_path: str | None = None
 
-# 1️⃣  Build the 3-second “instant-replay” MP4 (2 s pre + 1 s post)
-if crit_frames:                               # at least one critical spike
+if crit_frames:
     first_idx = crit_frames[0][0]
     last_idx  = crit_frames[-1][0]
 
+    # 👉 real times of the *clip* (after padding)
+    clip_start_s = max(0, first_idx - PRE_SEC * src_fps) / src_fps
+    clip_end_s   = min(len(frames) - 1,
+                       last_idx + POST_SEC * src_fps) / src_fps
+
     clip_path = export_incident_clip(
         frames, first_idx, last_idx, src_fps,
-        pre_sec=2, post_sec=1
+        pre_sec=PRE_SEC, post_sec=POST_SEC
     )
 
-    # inline preview (remove if you’d rather not auto-play)
-    st.video(clip_path, start_time=0)
+    with st.expander(
+        f"🚨 Crash clip • {clip_start_s:,.2f}s – {clip_end_s:,.2f}s",
+        expanded=False,
+    ):
+        st.video(clip_path, start_time=0)
+        with open(clip_path, "rb") as f:
+            st.download_button(
+                "⬇️ Download incident clip",
+                f.read(),
+                file_name=f"incident_{first_idx:06d}.mp4",
+                mime="video/mp4",
+                use_container_width=True,
+                key="download_incident_clip",
+            )
 
-    with open(clip_path, "rb") as f:
-        st.download_button(
-            "🎬 Download 3-second incident clip",
-            f.read(),
-            file_name=f"incident_{first_idx:06d}.mp4",
-            mime="video/mp4",
-            use_container_width=True,
-        )
+# ───────────────────────────────
+# 2️⃣  FRAME  GALLERIES  AFTERWARD
+# ───────────────────────────────
+def gallery(title: str, frameset):
+    if frameset:
+        with st.expander(title, expanded=False):
+            cols = st.columns(min(5, len(frameset)))
+            for i, (ix, prob, img) in enumerate(frameset):
+                cols[i % len(cols)].image(
+                    img[:, :, ::-1],
+                    caption=f"#{ix}  •  {prob:.2%}",
+                    use_column_width=True,
+                )
+
+gallery(f"🚨 Critical ({len(crit_frames)})",   crit_frames)
+gallery(f"⚠️ High-risk ({len(high_frames)})",  high_frames)
+
+
 # ──────────────────────────────────────────────
 # 2️⃣  One-page PDF incident report (optional)
 #     • only if we built an incident clip above
