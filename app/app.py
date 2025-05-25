@@ -53,10 +53,14 @@ def infer(bgr: np.ndarray) -> float:
     tensor = img.transpose(2,0,1)[None]
     return float(SESSION.run([OUT_NAME], {IN_NAME:tensor})[0].ravel()[0])
 
+def load_logo():
+    return Image.open(ROOT / "app" / "ui" / "SOTERIA_logo.png")
+
 ###############################################################################
 # 🖥️ SIDEBAR – INPUT & SETTINGS
 ###############################################################################
 with st.sidebar:
+    st.image(load_logo(), use_column_width=True)
     st.markdown("## ⚙️ Settings")
     fps_target = st.slider("Analyse FPS", 1, 30, 30)
     crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.60, 0.01)
@@ -143,7 +147,7 @@ last_time = time.perf_counter()
 tracker = SeverityTracker(low_cut=0.30,
                           high_cut=dispatch_th)
 sev, sev_cls = 0.0, "Minor"
-
+rel_speed_peak = 0.0
 
 
 prev_gray = None        # ← for optic-flow speed
@@ -280,6 +284,7 @@ while cap.isOpened():
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, colour, 1, cv2.LINE_AA)
 
     rel_speed = np.median([d["speed_px"] for d in cars]) if cars else 0.0
+    rel_speed_peak = max(rel_speed_peak, rel_speed)  # ★ NEW – track the peak
     metric_speed_ph.metric(  # ⏩ new block
         "Relative speed",
         f"{rel_speed * src_fps:0.0f} px/s"
@@ -436,22 +441,29 @@ if crit_frames:                               # at least one critical spike
 #     • hides the button when PDF generation fails
 # ──────────────────────────────────────────────
 if clip_path:
-    from report import generate_incident_report   # imported *inside* the block
+    from report import generate_incident_report  # imported *inside* the block
 
     pdf_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    chart_ok = generate_incident_report(          # returns True/False
-        out_path        = pdf_tmp.name,
-        clip_path       = clip_path,
-        critical_frames = crit_frames,
-        high_frames     = high_frames,
-        timeline_df     = pd.DataFrame(trend_pts),   # columns: f , p
-        crit_th         = crit_th,
-        high_th         = high_th,
-        model_name      = BEST.name,
-        src_name        = src_file.name,
+    chart_ok = generate_incident_report(
+
+        out_path=pdf_tmp.name,
+        clip_path=clip_path,
+        critical_frames=crit_frames,
+        high_frames=high_frames,
+        timeline_df=pd.DataFrame(trend_pts),
+        crit_th=crit_th,
+        high_th=high_th,
+        model_name=BEST.name,
+        src_name=src_file.name,
+        # ★ NEW fields expected by the updated report.py ★
+        tracker_stats=tracker.stats,  # dict with p_peak, dur_high, cars…
+        sev=sev,  # final severity score
+        sev_cls=sev_cls,  # "Minor" / "Moderate" / "Severe"
+        rel_speed_peak=rel_speed_peak,  # px / frame
+        src_fps=src_fps,
     )
 
-    if chart_ok:   # timeline successfully embedded
+    if chart_ok:  # timeline successfully embedded
         with open(pdf_tmp.name, "rb") as f:
             st.download_button(
                 "📄 Download 1-page Incident Report (PDF)",
@@ -460,7 +472,7 @@ if clip_path:
                 mime="application/pdf",
                 use_container_width=True,
             )
-    else:          # PDF created but without the chart
+    else:  # PDF created but without the chart
         st.warning(
             "ℹ️ The PDF was generated, but the timeline chart could not be "
             "embedded (missing **vl-convert** or head-less Chrome)."
