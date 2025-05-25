@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv, io, zipfile, tempfile, time
 from pathlib import Path
 import os
+import pandas as pd
 
 import cv2, numpy as np, onnxruntime as ort, streamlit as st, altair as alt
 from PIL import Image, ImageDraw, ImageFont
@@ -183,14 +184,21 @@ while cap.isOpened():
         prev_p = p
         trend_pts.append({"f": idx, "p": p})
 
+        # 1️⃣   Draw threshold lines on the spark-line
+        rules = alt.Chart(pd.DataFrame({
+            "y": [high_th, crit_th],
+            "colour": ["amber", "red"]
+        })).mark_rule(strokeDash=[4, 2]).encode(y='y:Q', color=alt.Color('colour:N', scale=None))
+
         chart = (
-            alt.Chart(alt.Data(values=trend_pts))
-            .mark_line(strokeWidth=1.5, color=PRIMARY)
-            .encode(
-                x=alt.X("f:Q", title=None),
-                y=alt.Y("p:Q", scale=alt.Scale(domain=[0,1]), title=None),
-            )
-            .properties(height=100, width="container")
+                alt.Chart(alt.Data(values=trend_pts))
+                .mark_line(strokeWidth=1.5, color=PRIMARY)
+                .encode(
+                    x=alt.X("f:Q", title=None),
+                    y=alt.Y("p:Q", scale=alt.Scale(domain=[0, 1]), title=None)
+                )
+                .properties(height=100, width="container")
+                + rules
         )
         chart_ph.altair_chart(chart, use_container_width=True)
 
