@@ -30,7 +30,7 @@ yolo = load_yolo()                # cached by @st.cache_resource
 
 from severity import SeverityTracker
 
-
+SCALE = 0.5        # 0.5 ➜ 50 % resolution  (tweak 0.33, 0.25, …)
 ###############################################################################
 # 📦 MODEL LOADING
 ###############################################################################
@@ -158,13 +158,23 @@ while cap.isOpened():
     analysed_frame = (idx % step == 0)
 
     # 1️⃣ optic-flow AFTER we know analysed_frame --------
+    # --- 1. build small greyscale copies ------------------------------
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    flow = None
-    if analysed_frame and prev_gray is not None:
-        flow = cv2.calcOpticalFlowFarneback(
-            prev_gray, gray, None,
+    small_gray = cv2.resize(gray, (0, 0), fx=SCALE, fy=SCALE)
+    flow = None  # default – no flow this frame
+
+    if analysed_frame and prev_gray is not None:  # run only on gated frames
+        small_flow = cv2.calcOpticalFlowFarneback(
+            prev_prev_small,  # note the *_small* names
+            small_gray,
+            None,
             0.5, 3, 15, 3, 5, 1.2, 0
-        )  # (H,W,2)  px / frame
+        )
+        # map flow back to full-size coordinate system (keep px / frame units)
+        flow = small_flow / SCALE
+
+    # keep small + full versions for the next iteration
+    prev_prev_small = small_gray
     prev_gray = gray
 
     # ── YOLO (always) ─────────────────────────────────────────────
@@ -253,7 +263,7 @@ while cap.isOpened():
         colour = det["colour"]
 
         if flow is not None:
-            roi = flow[y1:y2, x1:x2]
+            roi = flow[int(y1*SCALE):int(y2*SCALE), int(x1*SCALE):int(x2*SCALE)]
             mag = np.sqrt(roi[..., 0] ** 2 + roi[..., 1] ** 2)
             det["speed_px"] = float(np.median(mag))  # px / frame
         else:
@@ -262,7 +272,9 @@ while cap.isOpened():
         cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
 
         # label shows class + speed in px/s
-        label = f"{det['cls']} {det['speed_px'] * src_fps:4.0f}px/s"
+        label = (f"{det['cls']} "
+                 f"{det['score'] * 100:2.0f}%  "  # ← confidence
+                 f"{det['speed_px'] * src_fps:4.0f}px/s")  # ← speed
         cv2.putText(frame, label,
                     (x1, max(15, y1 - 8)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, colour, 1, cv2.LINE_AA)
