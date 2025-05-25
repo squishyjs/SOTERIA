@@ -124,6 +124,7 @@ metric_ph = col_metrics.empty()   # single metric
 metric2_ph  = col_metrics.empty()   # active vehicles 👈 new
 metric3_ph = col_metrics.empty()    #   <<< ADD THIS LINE
 lat_ph    = col_metrics.empty()   # single caption
+metric_speed_ph = col_metrics.empty()   # ⏩ new line
 
 # ───── finalise severity & show metric ────────────────────────────
 
@@ -143,19 +144,34 @@ tracker = SeverityTracker(low_cut=0.30,
                           high_cut=dispatch_th)
 sev, sev_cls = 0.0, "Minor"
 
+
+
+prev_gray = None        # ← for optic-flow speed
+
 while cap.isOpened():
     ok, frame = cap.read()
     if not ok:
         break
 
     frames.append(frame.copy())
+    # 0️⃣ cadence gate FIRST -----------------------------
+    analysed_frame = (idx % step == 0)
+
+    # 1️⃣ optic-flow AFTER we know analysed_frame --------
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    flow = None
+    if analysed_frame and prev_gray is not None:
+        flow = cv2.calcOpticalFlowFarneback(
+            prev_gray, gray, None,
+            0.5, 3, 15, 3, 5, 1.2, 0
+        )  # (H,W,2)  px / frame
+    prev_gray = gray
 
     # ── YOLO (always) ─────────────────────────────────────────────
     boxes = detect(yolo, frame)
     cars  = [b for b in boxes if b["cls"] in CAR_CLASSES]
     car_count_history.append(len(cars))
 
-    analysed_frame = (idx % step == 0)          # cadence gate
     start = time.perf_counter()
 
     # ── classifier on analysed frames only ───────────────────────
@@ -166,9 +182,6 @@ while cap.isOpened():
     else:
         p = prev_p or 0.0                       # reuse last prob
 
-    # ── update severity tracker (flow skipped when analysed_frame=False)
-    tracker.update(frame, p, len(cars), high_th,
-                   analysed_frame=analysed_frame)
 
     # ── UI that needs only analysed frames ───────────────────────
     if analysed_frame:
@@ -238,11 +251,31 @@ while cap.isOpened():
     for det in cars:
         x1, y1, x2, y2 = det["xyxy"]
         colour = det["colour"]
+
+        if flow is not None:
+            roi = flow[y1:y2, x1:x2]
+            mag = np.sqrt(roi[..., 0] ** 2 + roi[..., 1] ** 2)
+            det["speed_px"] = float(np.median(mag))  # px / frame
+        else:
+            det["speed_px"] = 0.0
+
         cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
-        cv2.putText(frame,
-                    f"{det['cls']} {det['score']*100:.0f}%",
+
+        # label shows class + speed in px/s
+        label = f"{det['cls']} {det['speed_px'] * src_fps:4.0f}px/s"
+        cv2.putText(frame, label,
                     (x1, max(15, y1 - 8)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, colour, 1, cv2.LINE_AA)
+
+    rel_speed = np.median([d["speed_px"] for d in cars]) if cars else 0.0
+    metric_speed_ph.metric(  # ⏩ new block
+        "Relative speed",
+        f"{rel_speed * src_fps:0.0f} px/s"
+    )
+
+    # 2️⃣ now that rel_speed is known, update tracker --------
+    tracker.update(frame, p, len(cars), rel_speed, high_th,
+                   analysed_frame=analysed_frame)
 
     # ── overlay & per-frame metrics ──────────────────────────────
     over   = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))

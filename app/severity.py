@@ -62,13 +62,15 @@ class SeverityTracker:
         frame_bgr: np.ndarray,
         p_crash:   float,
         cars_now:  int,
+        rel_speed: float,
         high_th:   float,
             analysed_frame: bool = True  # ← add flag
     ) -> None:
         """Feed one *analysed* frame."""
-        if analysed_frame and self.prev_frame is not None:   # ← one-liner
-            dv = flow_mag(self.prev_frame, frame_bgr) / self.flow_max
+        if analysed_frame:
+            dv = rel_speed / self.flow_max             # 0-1
             self.stats["delta_v"] = max(self.stats["delta_v"], min(dv, 1.0))
+
 
         self.prev_frame = frame_bgr.copy()
         self.stats["p_peak"] = max(self.stats["p_peak"], p_crash)
