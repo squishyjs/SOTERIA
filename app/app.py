@@ -131,7 +131,7 @@ def preprocess_classifier(bgr: np.ndarray) -> np.ndarray:
     CRITICAL: Keep this exactly as the working version to maintain model compatibility
     """
     img = cv2.resize(bgr, (IMG_SZ, IMG_SZ))
-    img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     return img.transpose(2, 0, 1)[None]
 
 
