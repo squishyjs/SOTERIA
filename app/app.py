@@ -41,10 +41,34 @@ EXPORTS = ROOT / "exports"
 BEST    = max(EXPORTS.glob("*/best.onnx"), key=lambda p: p.stat().st_mtime)
 IMG_SZ, CLASSES = 224, ["Crash", "Normal"]
 
+# @st.cache_resource(show_spinner="🔄 Loading ONNX model …")
+# def load_model(path: Path):
+#     sess = ort.InferenceSession(path.as_posix(), providers=["CPUExecutionProvider"])
+#     return sess, sess.get_inputs()[0].name, sess.get_outputs()[0].name
 @st.cache_resource(show_spinner="🔄 Loading ONNX model …")
 def load_model(path: Path):
-    sess = ort.InferenceSession(path.as_posix(), providers=["CPUExecutionProvider"])
+    # ▶️ perf-only tweak – zero accuracy impact
+    so = ort.SessionOptions()
+    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    so.intra_op_num_threads     = 4     # ← tune to physical cores
+    so.inter_op_num_threads     = 1
+
+    # Use GPU if available, otherwise fall back to CPU
+    avail = ort.get_available_providers()
+    providers = (
+        ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        if "CUDAExecutionProvider" in avail
+        else ["CPUExecutionProvider"]
+    )
+
+    sess = ort.InferenceSession(
+        path.as_posix(),
+        sess_options=so,
+        providers=providers,
+    )
     return sess, sess.get_inputs()[0].name, sess.get_outputs()[0].name
+
+
 
 SESSION, IN_NAME, OUT_NAME = load_model(BEST)
 
@@ -118,6 +142,7 @@ if not cap.isOpened():
 src_fps = cap.get(cv2.CAP_PROP_FPS) or 25
 step    = max(int(src_fps // fps_target), 1)
 total_fr = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+max_buf = int((PRE_SEC + POST_SEC) * src_fps) + 1
 
 # 5 : 1 layout – video dominates
 # col_vid, col_metrics = st.columns([5,1], gap="medium")
@@ -174,6 +199,8 @@ while cap.isOpened():
         break
 
     frames.append(frame.copy())
+    if len(frames) > max_buf:
+        frames.pop(0)
     # 0️⃣ cadence gate FIRST -----------------------------
     analysed_frame = (idx % step == 0)
 
@@ -198,9 +225,18 @@ while cap.isOpened():
     prev_gray = gray
 
     # ── YOLO (always) ─────────────────────────────────────────────
-    boxes = detect(yolo, frame)
-    cars  = [b for b in boxes if b["cls"] in CAR_CLASSES]
+    # boxes = detect(yolo, frame)
+    # cars  = [b for b in boxes if b["cls"] in CAR_CLASSES]
+    # car_count_history.append(len(cars))
+    if analysed_frame:
+        boxes = detect(yolo, frame)
+        prev_boxes = boxes
+    else:
+        boxes = prev_boxes
+
+    cars = [b for b in boxes if b["cls"] in CAR_CLASSES]
     car_count_history.append(len(cars))
+
 
     start = time.perf_counter()
 
@@ -214,7 +250,7 @@ while cap.isOpened():
 
 
     # ── UI that needs only analysed frames ───────────────────────
-    if analysed_frame:
+    if analysed_frame and idx % 5 == 0:
         # 1️⃣  update spark-line ------------------------------------------------
         trend_pts.append({"f": idx, "p": p})
 
