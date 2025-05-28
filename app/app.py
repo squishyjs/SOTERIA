@@ -63,7 +63,7 @@ def load_logo():
 ###############################################################################
 with st.sidebar:
     dispatch_url = ""  # empty ⇒ no dispatch
-    st.image(load_logo(), use_column_width=True)
+    st.image(load_logo(), use_container_width=True)
     st.markdown("## ⚙️ Settings")
     fps_target = st.slider("Analyse FPS", 1, 30, 30)
     crit_th    = st.slider("Critical threshold", 0.5, 1.0, 0.60, 0.01)
@@ -103,7 +103,7 @@ if src_file.type != "video/mp4":
     p = infer(frame)
     label = CLASSES[0] if p > 0.5 else CLASSES[1]
 
-    st.image(frame[:,:,::-1], caption=f"Prediction · {label} ({p:.2%})", use_column_width=True)
+    st.image(frame[:,:,::-1], caption=f"Prediction · {label} ({p:.2%})", use_container_width=True)
     st.metric("Crash probability", f"{p:.1%}")
     st.stop()
 
@@ -311,8 +311,8 @@ while cap.isOpened():
     tracker.update(frame, p, len(cars), rel_speed, high_th,
                    analysed_frame=analysed_frame)
 
-    # vid_ph.image(frame[:, :, ::-1], use_column_width=True)
-    vid_ph.image(frame[:, :, ::-1], use_column_width=True)  # auto-fit new column
+    # vid_ph.image(frame[:, :, ::-1], use_container_width=True)
+    vid_ph.image(frame[:, :, ::-1], use_container_width=True)  # auto-fit new column
 
     metric_ph.metric("Crash probability", f"{p:.1%}")
     metric2_ph.metric("Active vehicles", f"{len(cars)}")
@@ -461,7 +461,7 @@ with run_ctn:
                     cols[i % len(cols)].image(
                         img[:, :, ::-1],
                         caption=f"#{ix}  •  {prob:.2%}",
-                        use_column_width=True,
+                        use_container_width=True,
                     )
 
     gallery(f"🚨 Critical ({len(crit_frames)})",   crit_frames)
