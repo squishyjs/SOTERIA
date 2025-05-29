@@ -6,7 +6,6 @@ Helper that applies the dark “glass-morphism” look everywhere.
 from pathlib import Path
 import streamlit as st
 
-# expose colours so the main app can `from ui.theme import PRIMARY, SUCCESS`
 PRIMARY = "#ff595e"   # critical / primary
 SUCCESS = "#8ac926"   # safe
 

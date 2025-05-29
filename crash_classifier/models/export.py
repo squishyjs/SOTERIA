@@ -2,21 +2,10 @@
 """
 export.py – export a trained YOLO-v8 *classification* checkpoint to:
 
-    • ONNX  – 3 MB, fastest Flutter integration (onnxruntime plugin)
+    • ONNX
     • TFLite (fp32) – only if TensorFlow is available
-    • TorchScript – optional for C++ / LibTorch
+    • TorchScript
 
-Why this layout?
-────────────────
-• ONNX is universal across all Flutter targets and carries no extra DLLs.
-• TFLite still handy for mobile-only builds, but its converter pulls in the
-  whole TensorFlow stack.  We try it *only* when those deps are already present.
-• Everything runs on CPU → avoids Windows CUDA seg-fault (0xC0000005).
-
-Usage
------
-    python export.py                 # auto-detect newest runs/*/best.pt
-    python export.py path/to/best.pt
 """
 
 from __future__ import annotations

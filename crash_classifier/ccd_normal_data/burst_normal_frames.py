@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 """
-burst_normal_frames.py  –  super-fast normal-frame burster (v3.1)
+burst_normal_frames.py  –  super-fast normal-frame burster
 ───────────────────────────────────────────────────────────────────
- * Parallel (all cores)              * NVDEC → CPU fallback
- * Quality presets / manual qscale   * Ctrl-C safe
- * Live ETA / img-per-sec            * Temp dir per clip
-
-Output name:  N_<video-id(6)>_<frame-id(4)>.jpg
 """
 
 from __future__ import annotations

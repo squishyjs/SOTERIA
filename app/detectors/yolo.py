@@ -3,10 +3,10 @@ from ultralytics import YOLO
 import numpy as np
 import streamlit as st
 
-# ⬤ semantic categories we care about
+# ⬤ semantic categories
 CAR_CLASSES = {"car", "truck", "bus", "motorcycle"}
 
-# ⬤ fixed RGB palette  (feel free to tweak)
+# ⬤ fixed RGB palette
 CLASS_COLOURS = {
     "car":        (  0, 255,   0),   # green
     "truck":      (255, 140,   0),   # orange
@@ -39,7 +39,7 @@ def detect(model, frame_bgr, conf: float = 0.25) -> list[dict]:
 
         colour = CLASS_COLOURS.get(
             cls_name,
-            _fallback_colour(cls_idx)      # unseen class ⇒ deterministic colour
+            _fallback_colour(cls_idx)
         )
 
         out.append(
@@ -47,7 +47,7 @@ def detect(model, frame_bgr, conf: float = 0.25) -> list[dict]:
                 xyxy   = box.xyxy[0].cpu().numpy().astype(int),
                 cls    = cls_name,
                 score  = float(box.conf[0]),
-                colour = colour,             # ← new field
+                colour = colour,
             )
         )
     return out

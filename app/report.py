@@ -1,6 +1,5 @@
 """
 report.py – one-page PDF generator for SOTERIA (stream-safe, no Altair runtime)
-2025-05-25  • adds Event-summary block, UUID  • 2025-05-27 • brand logo in header
 """
 from __future__ import annotations
 

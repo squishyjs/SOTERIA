@@ -8,17 +8,6 @@ Turns the CSV flags into two flat folders:
         ├─ positive/   (impact, flag == 1)
         └─ negative/   (pre-impact, flag == 0)
 
-Extras
-──────
-* live ETA / speed in tqdm bar
-* per-class counters while running
-* pretty summary table
-* --dry-run   → analyse only, touch nothing
-* --verbose   → log each file op
-
-Example
-───────
-$ python split_ccd_frames.py --link --workers 24
 """
 from __future__ import annotations
 

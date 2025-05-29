@@ -1,17 +1,6 @@
 #!/usr/bin/env python3
 """
-train_model.py — one-click YOLO-v8 image-classifier training **plus**
-richer post-training evaluation (extra metrics, confidence histogram,
-clip-level report, qualitative montage, one-page PDF).
-
-Extra features v2025-05-26
-──────────────────────────
-• Balanced Accuracy + Cohen κ added to the classification report
-• Clip-level evaluation (flag=“crash” if ANY frame in a clip fires)
-• Prediction-confidence histogram
-• Automatic 12-image montage (TP / FP / FN) with colour borders
-• All new artefacts saved alongside the old ones and embedded in the PDF
-• Optional CLI flags — `--epochs`, `--model`, `--device`
+train_model.py
 """
 
 from __future__ import annotations
@@ -19,7 +8,7 @@ from __future__ import annotations
 # ───────────── imports ─────────────
 import argparse
 import os
-from tqdm import tqdm          # ← change this one line
+from tqdm import tqdm
 import pathlib
 import sys
 from datetime import datetime, timedelta
@@ -129,7 +118,7 @@ def build_pdf(run_dir: pathlib.Path) -> None:
         if i % 2 == 0: pdf.set_x(pdf.get_x() + w + 5)
     pdf.output(run_dir / "training_report.pdf")
 
-# ── prediction CSV loader (column-name safe)
+# ── prediction CSV loader
 def _read_predictions(preds_csv: pathlib.Path) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series | None]:
     df = pd.read_csv(preds_csv)
 
@@ -163,29 +152,23 @@ def _read_predictions(preds_csv: pathlib.Path) -> Tuple[pd.DataFrame, pd.Series,
 
 # ═════════ evaluation ════════════════════════════════════════════
 def evaluate(model: YOLO, run_dir: pathlib.Path) -> None:
-    """
-    Evaluate the held-out **test** split, collect predictions (even when
-    Ultralytics does not emit predictions.csv), and generate every artefact:
-    metrics tables, plots, qualitative montage, and the one-page PDF.
-    """
+
     # ── 1. run a single validation pass ───────────────────────────
     print("\n🔎  Evaluating on held-out test set …")
     results = model.val(
         data=str(IMAGES),        # folder with train/val/test
-        split="test",            # evaluate only test
-        save=True,               # ask Ultralytics to dump CSV/figs
-        plots=False,             # we draw our own curves
+        split="test",
+        save=True,
+        plots=False,
         device=DEVICE,
     )
     preds_csv = pathlib.Path(results.save_dir) / "predictions.csv"
 
     # ── 2. obtain frame-level predictions ─────────────────────────
     try:
-        # Preferred path: Ultralytics ≥ 8.3 writes predictions.csv
         df, y_true, y_pred, y_prob = _read_predictions(preds_csv)
 
     except FileNotFoundError:
-        # Older Ultralytics (≤ 8.2.x) – fall back to light-weight inference
         print("[INFO] predictions.csv absent – running manual inference …")
 
         rows: list[dict] = []
@@ -207,7 +190,7 @@ def evaluate(model: YOLO, run_dir: pathlib.Path) -> None:
 
     except Exception as e:
         print(f"[WARN] Could not obtain predictions — {e}")
-        return                           # nothing else to do
+        return
 
     # ── 3. frame-level metrics ───────────────────────────────────
     bal_acc = balanced_accuracy_score(y_true, y_pred)
@@ -229,7 +212,6 @@ def evaluate(model: YOLO, run_dir: pathlib.Path) -> None:
     plt.savefig(run_dir / "confusion_matrix.png", dpi=300)
     plt.close()
 
-    # ── 4. probability-based curves (if available) ───────────────
     if y_prob is not None:
         fpr, tpr, _ = roc_curve(y_true, y_prob)
         plt.figure(); plt.plot(fpr, tpr); plt.plot([0, 1], [0, 1], "--")
@@ -249,10 +231,8 @@ def evaluate(model: YOLO, run_dir: pathlib.Path) -> None:
     else:
         print("[INFO] Probability column absent — ROC/PR skipped")
 
-    # ── 5. training curves from Ultralytics results.csv ───────────
     plot_acc_loss(run_dir / "results.csv", run_dir)
 
-    # ── 6. clip-level metrics & qualitative montage ──────────────
     def to_clip_id(p: str) -> str:
         """C_000123_07.jpg → '000123' (fallback 'unknown')."""
         parts = pathlib.Path(p).name.split("_")
@@ -270,7 +250,6 @@ def evaluate(model: YOLO, run_dir: pathlib.Path) -> None:
     )
     (run_dir / "clip_level_report.txt").write_text(clip_report)
 
-    # helper for sampling indices cleanly
     def _sample(mask: np.ndarray, k: int) -> np.ndarray:
         idx = np.flatnonzero(mask)
         if len(idx) == 0:
@@ -299,7 +278,6 @@ def evaluate(model: YOLO, run_dir: pathlib.Path) -> None:
             grid.paste(t, (224 * (n % 4), 224 * (n // 4)))
         grid.save(run_dir / "qual_montage.jpg")
 
-    # ── 7. rebuild the PDF so new artefacts are embedded ──────────
     if GENERATE_PDF:
         try:
             build_pdf(run_dir)
@@ -310,7 +288,6 @@ def evaluate(model: YOLO, run_dir: pathlib.Path) -> None:
     print("\n── Frame-level metrics ──\n", report_txt)
     print("── Clip-level  metrics ──\n", clip_report)
 
-# ═════════ main ═════════
 def main() -> None:
     if not IMAGES.exists():
         sys.exit("[ERROR] data/images not found — run split_all_frames.py first.")
@@ -350,7 +327,6 @@ def main() -> None:
     model = YOLO(str(best_ckpt)).to(f"cuda:{DEVICE}" if DEVICE != -1 else "cpu")
     evaluate(model, run_dir)
 
-# ───────── CLI entry point ─────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="YOLO-v8 crash-classifier trainer")
     parser.add_argument("--epochs", type=int, default=EPOCHS, help="number of epochs")

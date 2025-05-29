@@ -3,11 +3,6 @@
 consolidate_frames.py  –  merge every positive / negative JPG (or PNG/JPEG)
 into one folder each (hard-links by default, copies with --copy).
 
-Additions
-─────────
-•  colour banner & per-source counts
-•  --debug  → show the exact folders scanned + first 3 filenames seen
-•  extension-agnostic (.jpg .JPG .jpeg .png)
 """
 
 from pathlib import Path

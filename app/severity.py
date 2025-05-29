@@ -8,8 +8,8 @@ import numpy as np
 from collections import defaultdict
 
 # ───────────────────────────  Tunables  ────────────────────────────
-FLOW_MAX: float = 12.0                          # px‑/frame magnitude → 1.0
-CAR_MAX:  int   = 10                            # ≥10 vehicles saturates count
+FLOW_MAX: float = 12.0
+CAR_MAX:  int   = 10
 WEIGHTS: dict[str, float] = {
     "p_peak":   0.45,
     "dur_high": 0.20,
@@ -19,7 +19,6 @@ WEIGHTS: dict[str, float] = {
 # ───────────────────────────────────────────────────────────────────
 
 def flow_mag(prev_bgr: np.ndarray, curr_bgr: np.ndarray) -> float:
-    """Mean dense‑optical‑flow magnitude (pixels) between two BGR frames."""
     prev_g = cv2.cvtColor(prev_bgr, cv2.COLOR_BGR2GRAY)
     curr_g = cv2.cvtColor(curr_bgr, cv2.COLOR_BGR2GRAY)
     flow   = cv2.calcOpticalFlowFarneback(
@@ -64,7 +63,7 @@ class SeverityTracker:
         cars_now:  int,
         rel_speed: float,
         high_th:   float,
-            analysed_frame: bool = True  # ← add flag
+            analysed_frame: bool = True
     ) -> None:
         """Feed one *analysed* frame."""
         if analysed_frame:
@@ -83,7 +82,6 @@ class SeverityTracker:
 
     # ──────────────────────────────────────────────────────────────
     def result(self) -> tuple[float, str]:
-        """Return (severity_score ∈ [0‑1], class)."""
         if self.frames:
             self.stats["dur_high"] /= self.frames
 

@@ -41,10 +41,7 @@ EXPORTS = ROOT / "exports"
 BEST    = max(EXPORTS.glob("*/best.onnx"), key=lambda p: p.stat().st_mtime)
 IMG_SZ, CLASSES = 224, ["Crash", "Normal"]
 
-# @st.cache_resource(show_spinner="🔄 Loading ONNX model …")
-# def load_model(path: Path):
-#     sess = ort.InferenceSession(path.as_posix(), providers=["CPUExecutionProvider"])
-#     return sess, sess.get_inputs()[0].name, sess.get_outputs()[0].name
+
 @st.cache_resource(show_spinner="🔄 Loading ONNX model …")
 def load_model(path: Path):
     # ▶️ perf-only tweak – zero accuracy impact
@@ -85,6 +82,7 @@ def load_logo():
 ###############################################################################
 # 🖥️ SIDEBAR – INPUT & SETTINGS
 ###############################################################################
+
 with st.sidebar:
     dispatch_url = ""  # empty ⇒ no dispatch
     st.image(load_logo(), use_container_width=True)

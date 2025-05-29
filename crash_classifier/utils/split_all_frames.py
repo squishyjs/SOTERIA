@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-split_all_frames.py — clip-aware train/val/test splitter (v3, 2025-05-26)
+split_all_frames.py — clip-aware train/val/test splitter
 
 Input  : data/all_frames/{positive,negative}/*.jpg
 Output : data/images/{train,val,test}/{crash,normal}/*.jpg (or hard-links)
