@@ -1,7 +1,6 @@
 <img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/3a215927-ca0b-4246-ae5f-cbab41cbfb2a" /># SOTERIA - Crash Detection Demo
 
 SOTERIA, a Streamlit-based application that uses a YOLOv8 image classification model (in ONNX format) to detect crashes in video frames or images.
-<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/6296eb2f-c042-476b-95ed-3d45eb1096b6" />
 
 ## Project Structure
 
