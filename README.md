@@ -1,4 +1,4 @@
-# SOTERIA — Crash Detection Demo
+<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/3a215927-ca0b-4246-ae5f-cbab41cbfb2a" /># SOTERIA - Crash Detection Demo
 
 SOTERIA is a Streamlit dashboard for crash detection in dashcam footage. It pairs a YOLOv8 object detector with a custom image-classification head exported to ONNX, then layers collision heuristics to surface clear, human-readable crash reports in real time.
 
@@ -53,21 +53,21 @@ SOTERIA/
 
 ## Training your own classifier
 The `crash_classifier` folder holds a full CCD pipeline. Typical flow:
-1) **Extract frames from CCD videos** (normal clips):  
+1) **Extract frames from CCD videos** (normal clips):
    `python crash_classifier/data/extract_frames.py --fps 2 --dst data/ccd/frames_normal`
-2) **Separate CCD frames by crash flag** (impact vs pre vs normal):  
-   `python crash_classifier/data/separate_frames.py --link`  
+2) **Separate CCD frames by crash flag** (impact vs pre vs normal):
+   `python crash_classifier/data/separate_frames.py --link`
    or `python crash_classifier/data/separate_by_flag.py` if you only need impact/pre split.
-3) **Build train/val/test folders** (hard-links by default):  
-   `python crash_classifier/data/split_dataset.py --link`  
+3) **Build train/val/test folders** (hard-links by default):
+   `python crash_classifier/data/split_dataset.py --link`
    This writes `data/images/{train,val,test}/{crash,normal}/`.
-4) **Train YOLOv8 classifier** (adjust config in the script for epochs/batch/gpu):  
+4) **Train YOLOv8 classifier** (adjust config in the script for epochs/batch/gpu):
    `python crash_classifier/training/train.py`
-5) **Export to ONNX/TFLite/TorchScript** (auto-picks newest run if no arg):  
+5) **Export to ONNX/TFLite/TorchScript** (auto-picks newest run if no arg):
    `python crash_classifier/models/export.py`
 6) **Serve the model**: move or copy the resulting `exports/<run>/best.onnx` into `SOTERIA/exports/<name>/best.onnx` for the Streamlit app.
 
-Quick CLI sanity check on a single image (uses the PyTorch checkpoint):  
+Quick CLI sanity check on a single image (uses the PyTorch checkpoint):
 ```bash
 python crash_classifier/cli/infer_one.py path/to/image.jpg
 ```
