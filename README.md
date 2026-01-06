@@ -1,4 +1,4 @@
-<img width="450" height="450" alt="image" src="https://github.com/user-attachments/assets/3a215927-ca0b-4246-ae5f-cbab41cbfb2a" />
+<img width="900" height="900" alt="image" src="https://github.com/user-attachments/assets/3a215927-ca0b-4246-ae5f-cbab41cbfb2a" />
 
 # SOTERIA - Crash Detection Demo
 
