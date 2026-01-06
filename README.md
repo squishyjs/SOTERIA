@@ -1,4 +1,6 @@
-<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/3a215927-ca0b-4246-ae5f-cbab41cbfb2a" /># SOTERIA - Crash Detection Demo
+<img width="800" height="600" alt="image" src="https://github.com/user-attachments/assets/3a215927-ca0b-4246-ae5f-cbab41cbfb2a" />
+
+# SOTERIA - Crash Detection Demo
 
 SOTERIA is a Streamlit dashboard for crash detection in dashcam footage. It pairs a YOLOv8 object detector with a custom image-classification head exported to ONNX, then layers collision heuristics to surface clear, human-readable crash reports in real time.
 
